@@ -1,6 +1,5 @@
 import os
 from typing import Literal
-
 import torch
 import lpips
 from fastapi import FastAPI, HTTPException
@@ -29,7 +28,7 @@ def load_rgb_tensor(path: str, device: str):
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     img = Image.open(path).convert("RGB")
-    # LPIPS zakłada tensor w zakresie [-1, 1] (typowa praktyka)
+    # LPIPS zakłada tensor w zakresie [-1, 1] (typowa praktyka) - ponoć :D
     t = T.Compose([
         T.ToTensor(),
         T.Lambda(lambda x: x * 2.0 - 1.0),
@@ -40,6 +39,7 @@ def load_rgb_tensor(path: str, device: str):
 class LpipsRequest(BaseModel):
     ref_path: str
     test_path: str
+    #  VGG jest najcieższy, 120 sek mi zajeło na LApku, Alex może być lepszy
     net: Literal["vgg", "alex", "squeeze"] = "vgg"
 
 
