@@ -6,7 +6,7 @@ import lpips
 from app.metrics.base import Metric, MetricResult
 from app.schemas.compare import LpipsDistanceConfig, LpipsHeatmapConfig
 from app.core.device import resolve_device
-from app.core.image_io import load_rgb_pil, resize_to_max_side, pil_to_tensor_minus1_1
+from app.core.image_io import load_rgb_pil, resize_to_max_side, pil_to_tensor_minus1_1, match_size
 from app.core.heatmap import normalize_0_1, heatmap_red, overlay
 
 
@@ -30,14 +30,22 @@ class LpipsMetric(Metric):
         return self._spatial[key]
 
     def distance(self, ref_path: str, test_path: str, config: LpipsDistanceConfig) -> MetricResult:
+
         device = resolve_device(config.force_device)
         model = self._model_scalar(config.net, device)
 
         ref_img = load_rgb_pil(ref_path)
         tst_img = load_rgb_pil(test_path)
 
+        # opcjonalnie: jeśli chcesz mieć max_side także dla skalaru, dodaj do configu
+        # i użyj:
+        # ref_img, tst_img = resize_pair_to_max_side(ref_img, tst_img, config.max_side)
+
+        ref_img, tst_img = match_size(ref_img, tst_img)
+
         ref_t = pil_to_tensor_minus1_1(ref_img, device)
         tst_t = pil_to_tensor_minus1_1(tst_img, device)
+
 
         with torch.no_grad():
             d = model(ref_t, tst_t)
