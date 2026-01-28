@@ -11,21 +11,11 @@ class MetricResult:
 
 
 class Metric(ABC):
-    name: str  # np. "lpips", "dists"
+    name: str
 
     @abstractmethod
-    def cache_key(self, **kwargs) -> str:
+    def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
         ...
 
-    @abstractmethod
-    def distance(self, ref_path: str, test_path: str, device: str, **kwargs) -> MetricResult:
-        ...
-
-    def heatmap_png(
-            self,
-            ref_path: str,
-            test_path: str,
-            device: str,
-            **kwargs
-    ) -> bytes:
+    def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
         raise NotImplementedError(f"Heatmap not supported for metric '{self.name}'")
