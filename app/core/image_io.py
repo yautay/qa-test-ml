@@ -3,23 +3,13 @@ from PIL import Image
 import torchvision.transforms as T
 
 
-def match_size(ref: Image.Image, tst: Image.Image) -> tuple[Image.Image, Image.Image]:
-    """Dopasuj test do rozmiaru referencji."""
-    if ref.size == tst.size:
-        return ref, tst
-    return ref, tst.resize(ref.size, resample=Image.BILINEAR)
-
-
 def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -> tuple[Image.Image, Image.Image]:
-    """
-    Skaluje OBA obrazy tą samą skalą, wyliczoną z największego boku w parze.
-    Dzięki temu nie rozjadą się proporcje i różnice zaokrągleń.
-    """
     w1, h1 = ref.size
     w2, h2 = tst.size
     longest = max(w1, h1, w2, h2)
     if longest <= max_side:
         return ref, tst
+
     scale = max_side / float(longest)
 
     def _resize(img: Image.Image) -> Image.Image:
@@ -29,6 +19,13 @@ def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -
         return img.resize((new_w, new_h), resample=Image.BILINEAR)
 
     return _resize(ref), _resize(tst)
+
+
+def match_size(ref: Image.Image, tst: Image.Image) -> tuple[Image.Image, Image.Image]:
+    # Dopasuj test do rozmiaru referencji (gwarancja identycznych tensorów)
+    if ref.size == tst.size:
+        return ref, tst
+    return ref, tst.resize(ref.size, resample=Image.BILINEAR)
 
 
 def ensure_exists(path: str) -> None:

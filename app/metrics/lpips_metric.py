@@ -6,7 +6,8 @@ import lpips
 from app.metrics.base import Metric, MetricResult
 from app.schemas.compare import LpipsDistanceConfig, LpipsHeatmapConfig
 from app.core.device import resolve_device
-from app.core.image_io import load_rgb_pil, resize_to_max_side, pil_to_tensor_minus1_1, match_size
+from app.core.image_io import load_rgb_pil, pil_to_tensor_minus1_1, match_size, \
+    resize_pair_to_max_side
 from app.core.heatmap import normalize_0_1, heatmap_red, overlay
 
 
@@ -59,8 +60,11 @@ class LpipsMetric(Metric):
         device = resolve_device(config.force_device)  # domyślnie cpu
         model = self._model_spatial(config.net, device)
 
-        ref_img = resize_to_max_side(load_rgb_pil(ref_path), config.max_side)
-        tst_img = resize_to_max_side(load_rgb_pil(test_path), config.max_side)
+        ref_img = load_rgb_pil(ref_path)
+        tst_img = load_rgb_pil(test_path)
+
+        ref_img, tst_img = resize_pair_to_max_side(ref_img, tst_img, config.max_side)
+        ref_img, tst_img = match_size(ref_img, tst_img)
 
         ref_t = pil_to_tensor_minus1_1(ref_img, device)
         tst_t = pil_to_tensor_minus1_1(tst_img, device)
