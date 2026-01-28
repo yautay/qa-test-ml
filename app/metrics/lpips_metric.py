@@ -1,5 +1,6 @@
-from typing import Literal
+from typing import Literal, TypeAlias
 import io
+
 import torch
 import torch.nn.functional as F
 import lpips
@@ -9,23 +10,31 @@ from app.metrics.base import Metric, MetricResult
 from app.core.image_io import load_rgb_tensor_minus1_1, load_rgb_pil
 from app.core.heatmap import normalize_0_1, heatmap_red, overlay
 
-LpipsNet = Literal["vgg", "alex", "squeeze"]
+LpipsNet: TypeAlias = Literal["vgg", "alex", "squeeze"]
+OverlayOn: TypeAlias = Literal["test", "ref"]
 
 
 class LpipsMetric(Metric):
     name = "lpips"
 
     def __init__(self):
-        self._models = {}  # cache per net
+        self._models_scalar = {}  # net -> lpips model (spatial=False)
+        self._models_spatial = {}  # net -> lpips model (spatial=True)
 
     def cache_key(self, **kwargs) -> str:
         net: str = kwargs.get("net", "vgg")
-        return f"lpips:{net}"
+        spatial: bool = bool(kwargs.get("spatial", False))
+        return f"lpips:{net}:{'spatial' if spatial else 'scalar'}"
 
     def _get_model(self, net: LpipsNet, device: str):
-        if net not in self._models:
-            self._models[net] = lpips.LPIPS(net=net).to(device).eval()
-        return self._models[net]
+        if net not in self._models_scalar:
+            self._models_scalar[net] = lpips.LPIPS(net=net).to(device).eval()
+        return self._models_scalar[net]
+
+    def _get_model_spatial(self, net: LpipsNet, device: str):
+        if net not in self._models_spatial:
+            self._models_spatial[net] = lpips.LPIPS(net=net, spatial=True).to(device).eval()
+        return self._models_spatial[net]
 
     def distance(self, ref_path: str, test_path: str, device: str, **kwargs) -> MetricResult:
         net: LpipsNet = kwargs.get("net", "vgg")
@@ -52,6 +61,9 @@ class LpipsMetric(Metric):
         alpha: float = float(kwargs.get("alpha", 0.45))
         overlay_on: OverlayOn = kwargs.get("overlay_on", "test")
 
+        if overlay_on not in ("test", "ref"):
+            raise ValueError("overlay_on must be 'test' or 'ref'")
+
         # model spatial
         model = self._get_model_spatial(net, device)
 
@@ -63,8 +75,7 @@ class LpipsMetric(Metric):
         W = ref_t.shape[3]
 
         with torch.no_grad():
-            # d_map zwykle ma mniejszą rozdzielczość
-            d_map = model(ref_t, tst_t)  # [1,1,h,w] albo podobnie
+            d_map = model(ref_t, tst_t)  # [1,1,h,w]
 
         # upscale do HxW
         d_map_up = F.interpolate(d_map, size=(H, W), mode="bilinear", align_corners=False)
