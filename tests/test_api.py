@@ -114,32 +114,27 @@ def test_heatmap_dists_not_supported_returns_400(monkeypatch: pytest.MonkeyPatch
     assert r.status_code == 400
 
 
-def test_compare_dists_endpoint_builds_config(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestClient):
     from app.metrics.base import Metric, MetricResult
     import app.api.routes.compare as compare_routes
 
     class DummyDists(Metric):
         name = "dists"
 
-        def __init__(self):
-            self.force_device = None
-
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            self.force_device = getattr(config, "force_device", "MISSING")
             assert getattr(config, "metric") == "dists"
+            assert getattr(config, "force_device") == "cpu"
             return MetricResult(value=0.456, meta={"metric": self.name, "device": "cpu"})
 
-    dummy = DummyDists()
-    monkeypatch.setattr(compare_routes.registry, "get", lambda name: dummy)
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
 
     r = client.post(
-        "/compare/dists",
+        "/compare",
         json={
             "ref_path": "test/ref_1.png",
             "test_path": "test/test_1.png",
-            "force_device": "cpu",
+            "config": {"metric": "dists", "force_device": "cpu"},
         },
     )
     assert r.status_code == 200
     assert r.json()["value"] == 0.456
-    assert dummy.force_device == "cpu"

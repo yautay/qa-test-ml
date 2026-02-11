@@ -64,17 +64,6 @@ curl -sS -X POST "http://127.0.0.1:8080/compare" \
   }'
 ```
 
-DISTS shortcut endpoint (JSON -> JSON):
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref_path": "test/ref_1.png",
-    "test_path": "test/test_1.png",
-    "force_device": null
-  }'
-```
 
 Heatmap (JSON -> image/png):
 
@@ -167,17 +156,6 @@ curl -sS -X POST "http://127.0.0.1:8080/compare" \
   }'
 ```
 
-Skrotowy endpoint dla DISTS (JSON -> JSON):
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref_path": "test/ref_1.png",
-    "test_path": "test/test_1.png",
-    "force_device": null
-  }'
-```
 
 Heatmap (JSON -> image/png):
 

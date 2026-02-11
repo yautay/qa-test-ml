@@ -4,8 +4,6 @@ from fastapi.responses import Response
 from app.schemas.compare import (
     CompareRequest,
     CompareResponse,
-    DistsCompareRequest,
-    DistsDistanceConfig,
     HeatmapRequest,
 )
 from app.core.registry import registry
@@ -23,21 +21,6 @@ def compare(req: CompareRequest):
         raise HTTPException(status_code=404, detail=f"File not found: {e}")
     except KeyError:
         raise HTTPException(status_code=400, detail=f"Metric not registered: {req.config.metric}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/compare/dists", response_model=CompareResponse)
-def compare_dists(req: DistsCompareRequest):
-    try:
-        metric = registry.get("dists")
-        config = DistsDistanceConfig(force_device=req.force_device)
-        result = metric.distance(req.ref_path, req.test_path, config)
-        return {"value": result.value, "meta": result.meta}
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {e}")
-    except KeyError:
-        raise HTTPException(status_code=400, detail="Metric not registered: dists")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
