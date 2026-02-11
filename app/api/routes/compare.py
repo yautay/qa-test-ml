@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-
 from app.schemas.compare import (
     CompareRequest,
     CompareResponse,
