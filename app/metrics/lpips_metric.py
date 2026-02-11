@@ -1,14 +1,19 @@
 import io
+
+import lpips
 import torch
 import torch.nn.functional as F
-import lpips
 
+from app.core.device import resolve_device
+from app.core.heatmap import heatmap_red, normalize_0_1, overlay
+from app.core.image_io import (
+    load_rgb_pil,
+    match_size,
+    pil_to_tensor_minus1_1,
+    resize_pair_to_max_side,
+)
 from app.metrics.base import Metric, MetricResult
 from app.schemas.compare import LpipsDistanceConfig, LpipsHeatmapConfig
-from app.core.device import resolve_device
-from app.core.image_io import load_rgb_pil, pil_to_tensor_minus1_1, match_size, \
-    resize_pair_to_max_side
-from app.core.heatmap import normalize_0_1, heatmap_red, overlay
 
 
 class LpipsMetric(Metric):
@@ -46,7 +51,6 @@ class LpipsMetric(Metric):
 
         ref_t = pil_to_tensor_minus1_1(ref_img, device)
         tst_t = pil_to_tensor_minus1_1(tst_img, device)
-
 
         with torch.no_grad():
             d = model(ref_t, tst_t)

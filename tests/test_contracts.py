@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 from fastapi.testclient import TestClient
 
 
 def _client_with_debug(debug: bool) -> TestClient:
     import os
+
     from app.main import create_app
 
     os.environ["API_DEBUG"] = "1" if debug else "0"
@@ -24,8 +26,8 @@ def test_contract_health_response_shape():
 
 
 def test_contract_compare_success_json_shape(monkeypatch):
-    from app.metrics.base import Metric, MetricResult
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -75,8 +77,8 @@ def test_contract_compare_validation_error_shape():
 
 
 def test_contract_compare_404_error_shape(monkeypatch):
-    from app.metrics.base import Metric
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -101,8 +103,8 @@ def test_contract_compare_404_error_shape(monkeypatch):
 
 
 def test_contract_compare_403_error_shape(monkeypatch):
-    from app.metrics.base import Metric
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -127,8 +129,8 @@ def test_contract_compare_403_error_shape(monkeypatch):
 
 
 def test_contract_compare_500_shape_api_debug_off(monkeypatch):
-    from app.metrics.base import Metric
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -154,8 +156,8 @@ def test_contract_compare_500_shape_api_debug_off(monkeypatch):
 
 
 def test_contract_compare_500_shape_api_debug_on(monkeypatch):
-    from app.metrics.base import Metric
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -184,8 +186,8 @@ def test_contract_compare_500_shape_api_debug_on(monkeypatch):
 
 
 def test_contract_compare_heatmap_success_content_type(monkeypatch):
-    from app.metrics.base import Metric, MetricResult
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
 
     class DummyMetric(Metric):
         name = "lpips"

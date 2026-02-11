@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import pytest
 import torch
 from fastapi.testclient import TestClient
@@ -34,8 +35,8 @@ def test_compare_invalid_metric_returns_422(client: TestClient):
 
 
 def test_compare_uses_registry_metric(monkeypatch: pytest.MonkeyPatch, client: TestClient):
-    from app.metrics.base import Metric, MetricResult
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -69,8 +70,8 @@ def test_compare_uses_registry_metric(monkeypatch: pytest.MonkeyPatch, client: T
 
 
 def test_compare_maps_file_not_found_to_404(monkeypatch: pytest.MonkeyPatch, client: TestClient):
-    from app.metrics.base import Metric
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
 
     class DummyMetric(Metric):
         name = "lpips"
@@ -91,9 +92,11 @@ def test_compare_maps_file_not_found_to_404(monkeypatch: pytest.MonkeyPatch, cli
     assert r.status_code == 404
 
 
-def test_heatmap_dists_not_supported_returns_400(monkeypatch: pytest.MonkeyPatch, client: TestClient):
-    from app.metrics.base import Metric, MetricResult
+def test_heatmap_dists_not_supported_returns_400(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
 
     class DummyDists(Metric):
         name = "dists"
@@ -115,15 +118,15 @@ def test_heatmap_dists_not_supported_returns_400(monkeypatch: pytest.MonkeyPatch
 
 
 def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestClient):
-    from app.metrics.base import Metric, MetricResult
     import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
 
     class DummyDists(Metric):
         name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            assert getattr(config, "metric") == "dists"
-            assert getattr(config, "force_device") == "cpu"
+            assert config.metric == "dists"
+            assert config.force_device == "cpu"
             return MetricResult(value=0.456, meta={"metric": self.name, "device": "cpu"})
 
     monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
@@ -154,8 +157,8 @@ def test_compare_blocks_path_outside_image_base_dir(client: TestClient):
 
 def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("API_DEBUG", "0")
-    from app.main import create_app
     import app.api.routes.compare as compare_routes
+    from app.main import create_app
     from app.metrics.base import Metric
 
     class BoomMetric(Metric):

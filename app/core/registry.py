@@ -1,5 +1,5 @@
-from app.metrics.lpips_metric import LpipsMetric
 from app.metrics.dists_metric import DistsMetric
+from app.metrics.lpips_metric import LpipsMetric
 
 
 class MetricRegistry:

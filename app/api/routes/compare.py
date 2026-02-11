@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from app.schemas.compare import CompareRequest, CompareResponse, HeatmapRequest
 from app.core.registry import registry
+from app.schemas.compare import CompareRequest, CompareResponse, HeatmapRequest
 
 router = APIRouter()
 

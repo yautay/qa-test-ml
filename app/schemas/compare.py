@@ -1,4 +1,5 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, Field
 
 MetricName = Literal["lpips", "dists"]
@@ -33,15 +34,9 @@ class DistsHeatmapConfig(HeatmapBaseConfig):
     metric: Literal["dists"] = "dists"
 
 
-DistanceConfig = Annotated[
-    Union[LpipsDistanceConfig, DistsDistanceConfig],
-    Field(discriminator="metric")
-]
+DistanceConfig = Annotated[LpipsDistanceConfig | DistsDistanceConfig, Field(discriminator="metric")]
 
-HeatmapConfig = Annotated[
-    Union[LpipsHeatmapConfig, DistsHeatmapConfig],
-    Field(discriminator="metric")
-]
+HeatmapConfig = Annotated[LpipsHeatmapConfig | DistsHeatmapConfig, Field(discriminator="metric")]
 
 
 class CompareRequest(BaseModel):

@@ -1,10 +1,11 @@
-import os
 import logging
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes.health import router as health_router
 from app.api.routes.compare import router as compare_router
+from app.api.routes.health import router as health_router
 
 log = logging.getLogger("uvicorn.error")
 
@@ -18,6 +19,7 @@ def create_app() -> FastAPI:
     debug = os.getenv("API_DEBUG", "1") == "1"
 
     if debug:
+
         @app.exception_handler(Exception)
         async def unhandled_exception_handler(request: Request, exc: Exception):
             # Loguje pełny traceback do logów uvicorn

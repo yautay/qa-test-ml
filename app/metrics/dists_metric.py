@@ -1,9 +1,10 @@
-import torch
 import piq
-from app.metrics.base import Metric, MetricResult
-from app.schemas.compare import DistsDistanceConfig
+import torch
+
 from app.core.device import resolve_device
 from app.core.image_io import load_rgb_pil, match_size, pil_to_tensor_0_1
+from app.metrics.base import Metric, MetricResult
+from app.schemas.compare import DistsDistanceConfig
 
 
 class DistsMetric(Metric):
