@@ -26,12 +26,6 @@ pip install -r requirements.txt
 # dev
 pip install -r requirements-dev.txt
 
-### 3. Pre-commit
-
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
-
 ---
 
 ## Uruchomienie aplikacji
