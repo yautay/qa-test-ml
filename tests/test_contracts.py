@@ -39,8 +39,8 @@ def test_contract_compare_success_json_shape(monkeypatch):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -59,8 +59,8 @@ def test_contract_compare_validation_error_shape():
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "nope"},
         },
     )
@@ -90,8 +90,8 @@ def test_contract_compare_404_error_shape(monkeypatch):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -116,8 +116,8 @@ def test_contract_compare_403_error_shape(monkeypatch):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -142,8 +142,8 @@ def test_contract_compare_500_shape_api_debug_off(monkeypatch):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -169,8 +169,8 @@ def test_contract_compare_500_shape_api_debug_on(monkeypatch):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -202,8 +202,8 @@ def test_contract_compare_heatmap_success_content_type(monkeypatch):
     r = client.post(
         "/compare/heatmap",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )

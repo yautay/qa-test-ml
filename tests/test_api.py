@@ -1,5 +1,4 @@
 from __future__ import annotations
-import piq
 import pytest
 import torch
 from fastapi.testclient import TestClient
@@ -26,8 +25,8 @@ def test_compare_invalid_metric_returns_422(client: TestClient):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "nope"},
         },
     )
@@ -59,8 +58,8 @@ def test_compare_uses_registry_metric(monkeypatch: pytest.MonkeyPatch, client: T
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -84,8 +83,8 @@ def test_compare_maps_file_not_found_to_404(monkeypatch: pytest.MonkeyPatch, cli
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg"},
         },
     )
@@ -107,8 +106,8 @@ def test_heatmap_dists_not_supported_returns_400(monkeypatch: pytest.MonkeyPatch
     r = client.post(
         "/compare/heatmap",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "dists"},
         },
     )
@@ -132,8 +131,8 @@ def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestCli
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "dists", "force_device": "cpu"},
         },
     )
@@ -146,7 +145,7 @@ def test_compare_blocks_path_outside_image_base_dir(client: TestClient):
         "/compare",
         json={
             "ref_path": "/etc/passwd",
-            "test_path": "test/test_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -171,8 +170,8 @@ def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
         },
     )
@@ -187,8 +186,8 @@ def test_compare_rejects_cuda_when_unavailable(client: TestClient):
     r = client.post(
         "/compare",
         json={
-            "ref_path": "test/ref_1.png",
-            "test_path": "test/test_1.png",
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
             "config": {"metric": "lpips", "net": "vgg", "force_device": "cuda"},
         },
     )
