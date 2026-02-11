@@ -25,17 +25,33 @@ def test_contract_health_response_shape():
     assert isinstance(data["metrics"], list)
 
 
-def test_contract_compare_success_json_shape(monkeypatch):
+def test_contract_compare_success_shape(monkeypatch):
     import app.api.routes.compare as compare_routes
     from app.metrics.base import Metric, MetricResult
 
-    class DummyMetric(Metric):
+    class DummyLpips(Metric):
         name = "lpips"
 
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
             return MetricResult(value=0.42, meta={"metric": "lpips", "device": "cpu"})
 
-    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyMetric())
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            return b"\x89PNG\r\n\x1a\n"
+
+    class DummyDists(Metric):
+        name = "dists"
+
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.24, meta={"metric": "dists", "device": "cpu"})
+
+    def _get(name: str):
+        if name == "lpips":
+            return DummyLpips()
+        if name == "dists":
+            return DummyDists()
+        raise KeyError(name)
+
+    monkeypatch.setattr(compare_routes.registry, "get", _get)
     client = _client_with_debug(debug=True)
 
     r = client.post(
@@ -43,27 +59,87 @@ def test_contract_compare_success_json_shape(monkeypatch):
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"lpips_net": "vgg", "force_device": "cpu"},
         },
     )
 
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/json")
     body = r.json()
-    assert set(body.keys()) == {"value", "meta"}
-    assert isinstance(body["value"], float)
-    assert isinstance(body["meta"], dict)
+    assert set(body.keys()) == {"lpips", "dists", "lpips_heatmap_png_base64"}
+    assert set(body["lpips"].keys()) == {"value", "meta"}
+    assert set(body["dists"].keys()) == {"value", "meta"}
+    assert isinstance(body["lpips_heatmap_png_base64"], str)
+
+
+def test_contract_compare_lpips_success_shape(monkeypatch):
+    import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
+
+    class DummyLpips(Metric):
+        name = "lpips"
+
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.42, meta={"metric": "lpips", "device": "cpu"})
+
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            return b"\x89PNG\r\n\x1a\n"
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyLpips())
+    client = _client_with_debug(debug=True)
+
+    r = client.post(
+        "/compare/lpips",
+        json={
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
+            "config": {"net": "vgg", "force_device": "cpu"},
+        },
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"lpips", "lpips_heatmap_png_base64"}
+    assert set(body["lpips"].keys()) == {"value", "meta"}
+
+
+def test_contract_compare_dists_success_shape(monkeypatch):
+    import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric, MetricResult
+
+    class DummyDists(Metric):
+        name = "dists"
+
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.24, meta={"metric": "dists", "device": "cpu"})
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
+    client = _client_with_debug(debug=True)
+
+    r = client.post(
+        "/compare/dists",
+        json={
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
+            "config": {"force_device": "cpu"},
+        },
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"dists"}
+    assert set(body["dists"].keys()) == {"value", "meta"}
 
 
 def test_contract_compare_validation_error_shape():
     client = _client_with_debug(debug=True)
 
     r = client.post(
-        "/compare",
+        "/compare/lpips",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "nope"},
+            "config": {"net": "invalid"},
         },
     )
 
@@ -81,7 +157,7 @@ def test_contract_compare_404_error_shape(monkeypatch):
     from app.metrics.base import Metric
 
     class DummyMetric(Metric):
-        name = "lpips"
+        name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config):
             raise FileNotFoundError("missing.png")
@@ -90,11 +166,11 @@ def test_contract_compare_404_error_shape(monkeypatch):
     client = _client_with_debug(debug=True)
 
     r = client.post(
-        "/compare",
+        "/compare/dists",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"force_device": "cpu"},
         },
     )
 
@@ -116,11 +192,11 @@ def test_contract_compare_403_error_shape(monkeypatch):
     client = _client_with_debug(debug=True)
 
     r = client.post(
-        "/compare",
+        "/compare/lpips",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"net": "vgg", "force_device": "cpu"},
         },
     )
 
@@ -133,7 +209,7 @@ def test_contract_compare_500_shape_api_debug_off(monkeypatch):
     from app.metrics.base import Metric
 
     class DummyMetric(Metric):
-        name = "lpips"
+        name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config):
             raise RuntimeError("sensitive details")
@@ -142,11 +218,11 @@ def test_contract_compare_500_shape_api_debug_off(monkeypatch):
     client = _client_with_debug(debug=False)
 
     r = client.post(
-        "/compare",
+        "/compare/dists",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"force_device": "cpu"},
         },
     )
 
@@ -160,7 +236,7 @@ def test_contract_compare_500_shape_api_debug_on(monkeypatch):
     from app.metrics.base import Metric
 
     class DummyMetric(Metric):
-        name = "lpips"
+        name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config):
             raise RuntimeError("boom")
@@ -169,11 +245,11 @@ def test_contract_compare_500_shape_api_debug_on(monkeypatch):
     client = _client_with_debug(debug=True)
 
     r = client.post(
-        "/compare",
+        "/compare/dists",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"force_device": "cpu"},
         },
     )
 
@@ -181,35 +257,5 @@ def test_contract_compare_500_shape_api_debug_on(monkeypatch):
     body = r.json()
     assert set(body.keys()) == {"error", "detail", "path", "method"}
     assert body["error"] == "RuntimeError"
-    assert body["path"] == "/compare"
+    assert body["path"] == "/compare/dists"
     assert body["method"] == "POST"
-
-
-def test_contract_compare_heatmap_success_content_type(monkeypatch):
-    import app.api.routes.compare as compare_routes
-    from app.metrics.base import Metric, MetricResult
-
-    class DummyMetric(Metric):
-        name = "lpips"
-
-        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            return MetricResult(value=0.0, meta={})
-
-        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
-            return b"\x89PNG\r\n\x1a\n"
-
-    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyMetric())
-    client = _client_with_debug(debug=True)
-
-    r = client.post(
-        "/compare/heatmap",
-        json={
-            "ref_path": "tests/assets/ref_1.png",
-            "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
-        },
-    )
-
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "image/png"
-    assert r.content.startswith(b"\x89PNG")

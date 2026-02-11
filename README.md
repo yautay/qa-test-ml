@@ -9,8 +9,8 @@ Serwis FastAPI do porownywania dwoch obrazow przy uzyciu metryk percepcyjnych (L
 ### What it does
 
 - Compares two images available on the server filesystem
-- Returns a scalar distance score (`/compare`)
-- Can return a PNG heatmap overlay (`/compare/heatmap`)
+- Returns LPIPS + DISTS scores and LPIPS heatmap in one response (`/compare`)
+- Supports dedicated endpoints for LPIPS (`/compare/lpips`) and DISTS (`/compare/dists`)
 
 ### Requirements
 
@@ -48,7 +48,7 @@ Health:
 curl http://127.0.0.1:8080/health
 ```
 
-Compare (JSON -> JSON):
+Compare all (JSON -> JSON):
 
 ```bash
 curl -sS -X POST "http://127.0.0.1:8080/compare" \
@@ -57,32 +57,46 @@ curl -sS -X POST "http://127.0.0.1:8080/compare" \
     "ref_path": "tests/assets/ref_1.png",
     "test_path": "tests/assets/test_1.png",
     "config": {
-      "metric": "lpips",
-      "net": "vgg",
-      "force_device": null
+      "lpips_net": "vgg",
+      "force_device": null,
+      "max_side": 1024,
+      "overlay_on": "test",
+      "alpha": 0.45
     }
   }'
 ```
 
 
-Heatmap (JSON -> image/png):
+LPIPS only (JSON -> JSON):
 
 ```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
+curl -sS -X POST "http://127.0.0.1:8080/compare/lpips" \
   -H "Content-Type: application/json" \
   -d '{
     "ref_path": "tests/assets/ref_1.png",
     "test_path": "tests/assets/test_1.png",
     "config": {
-      "metric": "lpips",
       "net": "vgg",
-      "force_device": "cpu",
+      "force_device": null,
       "max_side": 1024,
       "overlay_on": "test",
       "alpha": 0.45
     }
-  }' \
-  --output lpips_heatmap.png
+  }'
+```
+
+DISTS only (JSON -> JSON):
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ref_path": "tests/assets/ref_1.png",
+    "test_path": "tests/assets/test_1.png",
+    "config": {
+      "force_device": null
+    }
+  }'
 ```
 
 ### Notes
@@ -95,4 +109,4 @@ curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
 ### Metrics
 
 - `lpips`: implemented (scalar + heatmap). Nets: `vgg`, `alex`, `squeeze`.
-- `dists`: optional (scalar only). Heatmap is not supported.
+- `dists`: implemented for scalar scoring.

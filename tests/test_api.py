@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import base64
+
 import pytest
-import torch
 from fastapi.testclient import TestClient
 
 
@@ -22,37 +23,48 @@ def test_health(client: TestClient):
     assert "dists" in data["metrics"]
 
 
-def test_compare_invalid_metric_returns_422(client: TestClient):
+def test_compare_invalid_lpips_net_returns_422(client: TestClient):
     r = client.post(
         "/compare",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "nope"},
+            "config": {"lpips_net": "nope"},
         },
     )
     assert r.status_code == 422
 
 
-def test_compare_uses_registry_metric(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+def test_compare_returns_lpips_dists_and_heatmap(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
     import app.api.routes.compare as compare_routes
     from app.metrics.base import Metric, MetricResult
 
-    class DummyMetric(Metric):
+    class DummyLpips(Metric):
         name = "lpips"
 
-        def __init__(self):
-            self.seen = None
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.123, meta={"metric": "lpips"})
+
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            return b"\x89PNG\r\n\x1a\nFAKE"
+
+    class DummyDists(Metric):
+        name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            self.seen = (ref_path, test_path, config)
-            return MetricResult(value=0.123, meta={"metric": self.name})
+            return MetricResult(value=0.456, meta={"metric": "dists"})
 
-    dummy = DummyMetric()
+    lpips = DummyLpips()
+    dists = DummyDists()
 
     def _get(name: str):
-        assert name == "lpips"
-        return dummy
+        if name == "lpips":
+            return lpips
+        if name == "dists":
+            return dists
+        raise KeyError(name)
 
     monkeypatch.setattr(compare_routes.registry, "get", _get)
 
@@ -61,63 +73,49 @@ def test_compare_uses_registry_metric(monkeypatch: pytest.MonkeyPatch, client: T
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"lpips_net": "vgg", "force_device": "cpu"},
         },
     )
+
     assert r.status_code == 200
-    assert r.json()["value"] == 0.123
-    assert dummy.seen is not None
+    body = r.json()
+    assert body["lpips"]["value"] == 0.123
+    assert body["dists"]["value"] == 0.456
+    assert base64.b64decode(body["lpips_heatmap_png_base64"]).startswith(b"\x89PNG")
 
 
-def test_compare_maps_file_not_found_to_404(monkeypatch: pytest.MonkeyPatch, client: TestClient):
-    import app.api.routes.compare as compare_routes
-    from app.metrics.base import Metric
-
-    class DummyMetric(Metric):
-        name = "lpips"
-
-        def distance(self, ref_path: str, test_path: str, config):
-            raise FileNotFoundError("missing.png")
-
-    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyMetric())
-
-    r = client.post(
-        "/compare",
-        json={
-            "ref_path": "tests/assets/ref_1.png",
-            "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg"},
-        },
-    )
-    assert r.status_code == 404
-
-
-def test_heatmap_dists_not_supported_returns_400(
+def test_compare_lpips_returns_score_and_heatmap(
     monkeypatch: pytest.MonkeyPatch, client: TestClient
 ):
     import app.api.routes.compare as compare_routes
     from app.metrics.base import Metric, MetricResult
 
-    class DummyDists(Metric):
-        name = "dists"
+    class DummyLpips(Metric):
+        name = "lpips"
 
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            return MetricResult(value=0.0, meta={"metric": self.name})
+            return MetricResult(value=0.321, meta={"metric": "lpips", "device": "cpu"})
 
-    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            return b"\x89PNG\r\n\x1a\nFAKE"
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyLpips())
 
     r = client.post(
-        "/compare/heatmap",
+        "/compare/lpips",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "dists"},
+            "config": {"net": "vgg", "force_device": "cpu"},
         },
     )
-    assert r.status_code == 400
+    assert r.status_code == 200
+    body = r.json()
+    assert body["lpips"]["value"] == 0.321
+    assert base64.b64decode(body["lpips_heatmap_png_base64"]).startswith(b"\x89PNG")
 
 
-def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+def test_compare_dists_returns_only_score(monkeypatch: pytest.MonkeyPatch, client: TestClient):
     import app.api.routes.compare as compare_routes
     from app.metrics.base import Metric, MetricResult
 
@@ -125,34 +123,71 @@ def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestCli
         name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
-            assert config.metric == "dists"
             assert config.force_device == "cpu"
-            return MetricResult(value=0.456, meta={"metric": self.name, "device": "cpu"})
+            return MetricResult(value=0.456, meta={"metric": "dists", "device": "cpu"})
 
     monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
 
     r = client.post(
-        "/compare",
+        "/compare/dists",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "dists", "force_device": "cpu"},
+            "config": {"force_device": "cpu"},
         },
     )
     assert r.status_code == 200
-    assert r.json()["value"] == 0.456
+    body = r.json()
+    assert set(body.keys()) == {"dists"}
+    assert body["dists"]["value"] == 0.456
 
 
-def test_compare_blocks_path_outside_image_base_dir(client: TestClient):
+def test_compare_lpips_maps_file_not_found_to_404(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
+    import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
+
+    class DummyLpips(Metric):
+        name = "lpips"
+
+        def distance(self, ref_path: str, test_path: str, config):
+            raise FileNotFoundError("missing.png")
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyLpips())
+
     r = client.post(
-        "/compare",
+        "/compare/lpips",
         json={
-            "ref_path": "/etc/passwd",
+            "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"net": "vgg"},
         },
     )
-    assert r.status_code == 403
+    assert r.status_code == 404
+
+
+def test_compare_dists_maps_value_error_to_400(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
+
+    class DummyDists(Metric):
+        name = "dists"
+
+        def distance(self, ref_path: str, test_path: str, config):
+            raise ValueError("CUDA requested but not available on this host")
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: DummyDists())
+
+    r = client.post(
+        "/compare/dists",
+        json={
+            "ref_path": "tests/assets/ref_1.png",
+            "test_path": "tests/assets/test_1.png",
+            "config": {"force_device": "cuda"},
+        },
+    )
+    assert r.status_code == 400
 
 
 def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest.MonkeyPatch):
@@ -162,7 +197,7 @@ def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest
     from app.metrics.base import Metric
 
     class BoomMetric(Metric):
-        name = "lpips"
+        name = "dists"
 
         def distance(self, ref_path: str, test_path: str, config):
             raise RuntimeError("sensitive internal message")
@@ -171,27 +206,12 @@ def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest
 
     client = TestClient(create_app(), raise_server_exceptions=False)
     r = client.post(
-        "/compare",
+        "/compare/dists",
         json={
             "ref_path": "tests/assets/ref_1.png",
             "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+            "config": {"force_device": "cpu"},
         },
     )
     assert r.status_code == 500
     assert "sensitive internal message" not in r.text
-
-
-def test_compare_rejects_cuda_when_unavailable(client: TestClient):
-    if torch.cuda.is_available():
-        pytest.skip("Host has CUDA; this test expects no CUDA")
-
-    r = client.post(
-        "/compare",
-        json={
-            "ref_path": "tests/assets/ref_1.png",
-            "test_path": "tests/assets/test_1.png",
-            "config": {"metric": "lpips", "net": "vgg", "force_device": "cuda"},
-        },
-    )
-    assert r.status_code == 400
