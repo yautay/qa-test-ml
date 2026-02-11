@@ -7,4 +7,4 @@ router = APIRouter()
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "device": resolve_device(), "metrics": registry.list_names()}
+    return {"status": "ok", "device": resolve_device(None), "metrics": registry.list()}
