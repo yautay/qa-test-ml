@@ -54,8 +54,8 @@ Compare (JSON -> JSON):
 curl -sS -X POST "http://127.0.0.1:8080/compare" \
   -H "Content-Type: application/json" \
   -d '{
-    "ref_path": "test/ref_1.png",
-    "test_path": "test/test_1.png",
+    "ref_path": "tests/assets/ref_1.png",
+    "test_path": "tests/assets/test_1.png",
     "config": {
       "metric": "lpips",
       "net": "vgg",
@@ -71,8 +71,8 @@ Heatmap (JSON -> image/png):
 curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
   -H "Content-Type: application/json" \
   -d '{
-    "ref_path": "test/ref_1.png",
-    "test_path": "test/test_1.png",
+    "ref_path": "tests/assets/ref_1.png",
+    "test_path": "tests/assets/test_1.png",
     "config": {
       "metric": "lpips",
       "net": "vgg",
