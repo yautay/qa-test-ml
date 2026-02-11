@@ -1,6 +1,8 @@
 import numpy as np
 from PIL import Image
 
+_RESAMPLE_BILINEAR = getattr(Image, "Resampling", Image).BILINEAR
+
 
 def normalize_0_1(m: np.ndarray) -> np.ndarray:
     """
@@ -43,7 +45,7 @@ def overlay(base_rgb: Image.Image, heat_rgb: np.ndarray, alpha: float) -> Image.
     # Ensure same spatial size; resize heatmap if needed
     if (base.shape[1], base.shape[0]) != (heat_rgb.shape[1], heat_rgb.shape[0]):
         heat_img = Image.fromarray(heat_rgb, mode="RGB").resize(
-            (base.shape[1], base.shape[0]), resample=Image.BILINEAR
+            (base.shape[1], base.shape[0]), resample=_RESAMPLE_BILINEAR
         )
         heat = np.array(heat_img, dtype=np.float32)
     else:

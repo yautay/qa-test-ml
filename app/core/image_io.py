@@ -1,10 +1,10 @@
 import os
-from typing import Callable, cast
-import torch
-from PIL import Image
-from PIL import UnidentifiedImageError
-import torchvision.transforms as T
+from collections.abc import Callable
+from typing import cast
 
+import torch
+import torchvision.transforms as T
+from PIL import Image, UnidentifiedImageError
 
 _RESAMPLE_BILINEAR = cast(int, getattr(getattr(Image, "Resampling", object()), "BILINEAR", 2))
 
@@ -23,7 +23,9 @@ def resolve_input_path(path: str) -> str:
     return resolved
 
 
-def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -> tuple[Image.Image, Image.Image]:
+def resize_pair_to_max_side(
+    ref: Image.Image, tst: Image.Image, max_side: int
+) -> tuple[Image.Image, Image.Image]:
     w1, h1 = ref.size
     w2, h2 = tst.size
     longest = max(w1, h1, w2, h2)
@@ -60,7 +62,7 @@ def load_rgb_pil(path: str) -> Image.Image:
         raise FileNotFoundError(path)
     try:
         with Image.open(resolved) as img:
-            return img.convert("RGB")
+            return cast(Image.Image, img.convert("RGB"))
     except UnidentifiedImageError as exc:
         raise ValueError(f"Unsupported or invalid image file: {path}") from exc
 
@@ -78,10 +80,12 @@ def resize_to_max_side(img: Image.Image, max_side: int) -> Image.Image:
 
 _pil_to_tensor_minus1_1 = cast(
     Callable[[Image.Image], torch.Tensor],
-    T.Compose([
-        T.ToTensor(),
-        T.Lambda(lambda x: x * 2.0 - 1.0),
-    ]),
+    T.Compose(
+        [
+            T.ToTensor(),
+            T.Lambda(lambda x: x * 2.0 - 1.0),
+        ]
+    ),
 )
 
 _pil_to_tensor_0_1 = cast(Callable[[Image.Image], torch.Tensor], T.ToTensor())
