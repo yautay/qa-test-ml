@@ -6,3 +6,4 @@ pip-check-reqs
 ruff
 black
 mypy
+pre-commit
