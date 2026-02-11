@@ -1,12 +1,26 @@
 import os
 from typing import Callable, cast
-
 import torch
 from PIL import Image
+from PIL import UnidentifiedImageError
 import torchvision.transforms as T
 
 
 _RESAMPLE_BILINEAR = cast(int, getattr(getattr(Image, "Resampling", object()), "BILINEAR", 2))
+
+
+def _image_base_dir() -> str:
+    base = os.getenv("IMAGE_BASE_DIR", ".")
+    return os.path.realpath(os.path.abspath(base))
+
+
+def resolve_input_path(path: str) -> str:
+    base = _image_base_dir()
+    candidate = path if os.path.isabs(path) else os.path.join(base, path)
+    resolved = os.path.realpath(os.path.abspath(candidate))
+    if os.path.commonpath([resolved, base]) != base:
+        raise PermissionError(f"Path is outside IMAGE_BASE_DIR: {path}")
+    return resolved
 
 
 def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -> tuple[Image.Image, Image.Image]:
@@ -28,20 +42,27 @@ def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -
 
 
 def match_size(ref: Image.Image, tst: Image.Image) -> tuple[Image.Image, Image.Image]:
-    # Dopasuj test do rozmiaru referencji (gwarancja identycznych tensorów)
+    # Dopasuj test do rozmiaru referencji
     if ref.size == tst.size:
         return ref, tst
     return ref, tst.resize(ref.size, resample=_RESAMPLE_BILINEAR)
 
 
 def ensure_exists(path: str) -> None:
-    if not os.path.exists(path):
+    resolved = resolve_input_path(path)
+    if not os.path.exists(resolved):
         raise FileNotFoundError(path)
 
 
 def load_rgb_pil(path: str) -> Image.Image:
-    ensure_exists(path)
-    return Image.open(path).convert("RGB")
+    resolved = resolve_input_path(path)
+    if not os.path.exists(resolved):
+        raise FileNotFoundError(path)
+    try:
+        with Image.open(resolved) as img:
+            return img.convert("RGB")
+    except UnidentifiedImageError as exc:
+        raise ValueError(f"Unsupported or invalid image file: {path}") from exc
 
 
 def resize_to_max_side(img: Image.Image, max_side: int) -> Image.Image:

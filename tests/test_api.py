@@ -1,6 +1,7 @@
 from __future__ import annotations
-
+import piq
 import pytest
+import torch
 from fastapi.testclient import TestClient
 
 
@@ -138,3 +139,57 @@ def test_compare_supports_dists(monkeypatch: pytest.MonkeyPatch, client: TestCli
     )
     assert r.status_code == 200
     assert r.json()["value"] == 0.456
+
+
+def test_compare_blocks_path_outside_image_base_dir(client: TestClient):
+    r = client.post(
+        "/compare",
+        json={
+            "ref_path": "/etc/passwd",
+            "test_path": "test/test_1.png",
+            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+        },
+    )
+    assert r.status_code == 403
+
+
+def test_compare_returns_generic_500_when_api_debug_disabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("API_DEBUG", "0")
+    from app.main import create_app
+    import app.api.routes.compare as compare_routes
+    from app.metrics.base import Metric
+
+    class BoomMetric(Metric):
+        name = "lpips"
+
+        def distance(self, ref_path: str, test_path: str, config):
+            raise RuntimeError("sensitive internal message")
+
+    monkeypatch.setattr(compare_routes.registry, "get", lambda name: BoomMetric())
+
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    r = client.post(
+        "/compare",
+        json={
+            "ref_path": "test/ref_1.png",
+            "test_path": "test/test_1.png",
+            "config": {"metric": "lpips", "net": "vgg", "force_device": "cpu"},
+        },
+    )
+    assert r.status_code == 500
+    assert "sensitive internal message" not in r.text
+
+
+def test_compare_rejects_cuda_when_unavailable(client: TestClient):
+    if torch.cuda.is_available():
+        pytest.skip("Host has CUDA; this test expects no CUDA")
+
+    r = client.post(
+        "/compare",
+        json={
+            "ref_path": "test/ref_1.png",
+            "test_path": "test/test_1.png",
+            "config": {"metric": "lpips", "net": "vgg", "force_device": "cuda"},
+        },
+    )
+    assert r.status_code == 400

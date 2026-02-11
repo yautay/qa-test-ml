@@ -6,6 +6,10 @@ def auto_device() -> str:
 
 
 def resolve_device(force_device: str | None) -> str:
-    if force_device in ("cpu", "cuda"):
-        return force_device
+    if force_device == "cpu":
+        return "cpu"
+    if force_device == "cuda":
+        if not torch.cuda.is_available():
+            raise ValueError("CUDA requested but not available on this host")
+        return "cuda"
     return auto_device()

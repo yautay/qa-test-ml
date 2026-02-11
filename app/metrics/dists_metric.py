@@ -1,10 +1,5 @@
 import torch
-
-try:
-    import piq  # type: ignore
-except Exception:  # pragma: no cover
-    piq = None
-
+import piq
 from app.metrics.base import Metric, MetricResult
 from app.schemas.compare import DistsDistanceConfig
 from app.core.device import resolve_device
