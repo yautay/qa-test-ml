@@ -59,3 +59,9 @@ class HeatmapRequest(BaseModel):
     ref_path: str
     test_path: str
     config: HeatmapConfig
+
+
+class DistsCompareRequest(BaseModel):
+    ref_path: str
+    test_path: str
+    force_device: Literal["cpu", "cuda"] | None = None

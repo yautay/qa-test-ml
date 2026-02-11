@@ -23,6 +23,13 @@ Serwis FastAPI do porownywania dwoch obrazow przy uzyciu metryk percepcyjnych (L
 pip install -r requirements.txt
 ```
 
+### Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
 ### Run
 
 ```bash
@@ -57,6 +64,18 @@ curl -sS -X POST "http://127.0.0.1:8080/compare" \
   }'
 ```
 
+DISTS shortcut endpoint (JSON -> JSON):
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ref_path": "test/ref_1.png",
+    "test_path": "test/test_1.png",
+    "force_device": null
+  }'
+```
+
 Heatmap (JSON -> image/png):
 
 ```bash
@@ -86,7 +105,7 @@ curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
 ### Metrics
 
 - `lpips`: implemented (scalar + heatmap). Nets: `vgg`, `alex`, `squeeze`.
-- `dists`: present in schemas, but not implemented/registered yet.
+- `dists`: implemented (scalar only). Heatmap is not supported.
 
 ## Polski
 
@@ -105,6 +124,13 @@ curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
 
 ```bash
 pip install -r requirements.txt
+```
+
+### Testy
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
 ```
 
 ### Uruchomienie
@@ -141,6 +167,18 @@ curl -sS -X POST "http://127.0.0.1:8080/compare" \
   }'
 ```
 
+Skrotowy endpoint dla DISTS (JSON -> JSON):
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ref_path": "test/ref_1.png",
+    "test_path": "test/test_1.png",
+    "force_device": null
+  }'
+```
+
 Heatmap (JSON -> image/png):
 
 ```bash
@@ -170,4 +208,4 @@ curl -sS -X POST "http://127.0.0.1:8080/compare/heatmap" \
 ### Metryki
 
 - `lpips`: zaimplementowane (skalar + heatmap). Sieci: `vgg`, `alex`, `squeeze`.
-- `dists`: jest w schematach, ale nie jest jeszcze zaimplementowane/zarejestrowane.
+- `dists`: zaimplementowane (tylko skalar). Heatmap nie jest wspierany.

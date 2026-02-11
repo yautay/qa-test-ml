@@ -1,4 +1,5 @@
 from app.metrics.lpips_metric import LpipsMetric
+from app.metrics.dists_metric import DistsMetric
 
 
 class MetricRegistry:
@@ -17,3 +18,4 @@ class MetricRegistry:
 
 registry = MetricRegistry()
 registry.register(LpipsMetric())
+registry.register(DistsMetric())
