@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from app.core.config import get_str
 from app.core.registry import registry
 from app.schemas.compare import (
     DistsDistanceConfig,
@@ -36,9 +37,9 @@ class JobRecord:
 
 
 class CompareJobManager:
-    def __init__(self, workers: int = 2):
+    def __init__(self, workers: int = 2, queue_maxsize: int = 0):
         self._workers_count = max(1, workers)
-        self._queue: asyncio.Queue[str] = asyncio.Queue()
+        self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max(0, queue_maxsize))
         self._jobs: dict[str, JobRecord] = {}
         self._lock = asyncio.Lock()
         self._workers: list[asyncio.Task[None]] = []
@@ -157,7 +158,7 @@ class CompareJobManager:
     @staticmethod
     def _store_temp_image(content: bytes, original_name: str) -> str:
         suffix = os.path.splitext(original_name)[1] or ".png"
-        base_dir = os.path.realpath(os.path.abspath(os.getenv("IMAGE_BASE_DIR", ".")))
+        base_dir = os.path.realpath(os.path.abspath(get_str("IMAGE_BASE_DIR", ".")))
         fd, path = tempfile.mkstemp(prefix="compare_job_", suffix=suffix, dir=base_dir)
         with os.fdopen(fd, "wb") as f:
             f.write(content)

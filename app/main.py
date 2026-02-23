@@ -6,8 +6,32 @@ from loguru import logger
 
 from app.api.routes.compare import router as compare_router
 from app.api.routes.health import router as health_router
+from app.core.config import get_bool, get_int
 from app.core.jobs import CompareJobManager
 from app.core.logging import configure_logging
+
+
+def _read_job_runtime_settings() -> tuple[int, int]:
+    workers = get_int("COMPARE_JOB_WORKERS", 2)
+    queue_maxsize = get_int("QUEUE_MAXSIZE", 0)
+
+    if workers < 1:
+        logger.warning("Invalid COMPARE_JOB_WORKERS={} ; using 1", workers)
+        workers = 1
+
+    cpu_count = os.cpu_count() or 1
+    max_workers = max(1, cpu_count * 4)
+    if workers > max_workers:
+        logger.warning(
+            "COMPARE_JOB_WORKERS={} too high for host (max={}) ; capping", workers, max_workers
+        )
+        workers = max_workers
+
+    if queue_maxsize < 0:
+        logger.warning("Invalid QUEUE_MAXSIZE={} ; using 0", queue_maxsize)
+        queue_maxsize = 0
+
+    return workers, queue_maxsize
 
 
 def create_app() -> FastAPI:
@@ -28,7 +52,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(compare_router)
 
-    jobs_manager = CompareJobManager()
+    jobs_workers, queue_maxsize = _read_job_runtime_settings()
+    jobs_manager = CompareJobManager(workers=jobs_workers, queue_maxsize=queue_maxsize)
     app.state.compare_jobs = jobs_manager
 
     @app.on_event("startup")
@@ -39,7 +64,7 @@ def create_app() -> FastAPI:
     async def _shutdown_jobs() -> None:
         await jobs_manager.stop()
 
-    debug = os.getenv("API_DEBUG", "1") == "1"
+    debug = get_bool("API_DEBUG", default=True)
 
     if debug:
 

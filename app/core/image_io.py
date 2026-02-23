@@ -6,11 +6,13 @@ import torch
 import torchvision.transforms as T
 from PIL import Image, UnidentifiedImageError
 
+from app.core.config import get_str
+
 _RESAMPLE_BILINEAR = cast(int, getattr(getattr(Image, "Resampling", object()), "BILINEAR", 2))
 
 
 def _image_base_dir() -> str:
-    base = os.getenv("IMAGE_BASE_DIR", ".")
+    base = get_str("IMAGE_BASE_DIR", ".")
     return os.path.realpath(os.path.abspath(base))
 
 

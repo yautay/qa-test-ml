@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import threading
 from typing import Any
@@ -8,22 +7,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
+from app.core.config import get_bool, get_int, get_str
 
 
 class ApiLogSink:
@@ -88,7 +72,7 @@ class ApiLogSink:
 def configure_logging() -> None:
     logger.remove()
 
-    log_level = os.getenv("LOG_LEVEL", "INFO")
+    log_level = get_str("LOG_LEVEL", "INFO")
     logger.add(
         sys.stderr,
         level=log_level,
@@ -101,13 +85,13 @@ def configure_logging() -> None:
         "<level>{message}</level>",
     )
 
-    api_enabled = _env_bool("LOG_API_ENABLED", default=False)
-    api_url = os.getenv("LOG_API_URL", "").strip()
+    api_enabled = get_bool("LOG_API_ENABLED", default=False)
+    api_url = get_str("LOG_API_URL", "").strip()
     if api_enabled and api_url:
-        api_level = os.getenv("LOG_API_LEVEL", "ERROR")
-        timeout_ms = _env_int("LOG_API_TIMEOUT_MS", 2000)
-        token = os.getenv("LOG_API_TOKEN")
-        service_name = os.getenv("LOG_SERVICE_NAME", "perceptual-metrics-service")
+        api_level = get_str("LOG_API_LEVEL", "ERROR")
+        timeout_ms = get_int("LOG_API_TIMEOUT_MS", 2000)
+        token = get_str("LOG_API_TOKEN", "").strip() or None
+        service_name = get_str("LOG_SERVICE_NAME", "perceptual-metrics-service")
 
         sink = ApiLogSink(
             api_url,

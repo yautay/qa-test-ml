@@ -32,6 +32,16 @@ pip install -r requirements-dev.txt
 
 uvicorn app.main:app --reload
 
+Opcjonalnie konfiguracja przez plik:
+
+cp config.toml.example config.toml
+
+Priorytet ustawień: zmienne systemowe > config.toml > domyślne wartości w kodzie.
+
+Walidacja job settings:
+- COMPARE_JOB_WORKERS: zakres 1..(CPU_COUNT * 4)
+- QUEUE_MAXSIZE: minimum 0
+
 ---
 
 ## Testy

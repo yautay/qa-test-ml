@@ -36,6 +36,18 @@ pytest
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
+Configuration source priority for runtime settings:
+
+- system environment variables
+- `config.toml` in project root (`[env]` section)
+- hardcoded defaults in code
+
+To start with file-based config, copy and edit:
+
+```bash
+cp config.toml.example config.toml
+```
+
 Open Swagger UI:
 
 - `http://127.0.0.1:8080/docs`
@@ -141,6 +153,12 @@ curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d
 - `ref_path`/`test_path` must resolve inside `IMAGE_BASE_DIR` (default: current working directory).
 - GPU: you need a CUDA-enabled PyTorch build; then set `config.force_device` to `"cuda"`.
 - `API_DEBUG=1` (default) returns a detailed JSON 500 response; set `API_DEBUG=0` to disable it.
+- Async jobs worker pool can be tuned with:
+  - `COMPARE_JOB_WORKERS` (default: `2`)
+  - `QUEUE_MAXSIZE` (default: `0`, means unbounded queue)
+- Validation rules:
+  - `COMPARE_JOB_WORKERS` is clamped to `1..(CPU_COUNT * 4)`
+  - `QUEUE_MAXSIZE` lower bound is `0`
 - `/v1/compare/jobs` keeps job state in memory (no persistence after process restart).
 - Heatmap endpoint is available only for completed jobs with `metric=lpips` or `metric=both`.
 

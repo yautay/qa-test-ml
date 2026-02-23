@@ -1,0 +1,16 @@
+[env]
+API_DEBUG = "1"
+IMAGE_BASE_DIR = "."
+LOG_LEVEL = "INFO"
+
+# Async jobs
+COMPARE_JOB_WORKERS = 2
+QUEUE_MAXSIZE = 0
+
+# Optional API logging sink
+LOG_API_ENABLED = false
+LOG_API_URL = ""
+LOG_API_LEVEL = "ERROR"
+LOG_API_TIMEOUT_MS = 2000
+LOG_API_TOKEN = ""
+LOG_SERVICE_NAME = "perceptual-metrics-service"
