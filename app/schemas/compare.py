@@ -1,8 +1,10 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 MetricName = Literal["lpips", "dists"]
+JobMetricName = Literal["lpips", "dists", "both"]
+JobStatusName = Literal["queued", "running", "done", "error"]
 
 
 class HeatmapBaseConfig(BaseModel):
@@ -51,17 +53,59 @@ class CompareAllRequest(BaseModel):
     test_path: str
     config: CompareAllConfig = Field(default_factory=CompareAllConfig)
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ref_path": "tests/assets/ref_1.png",
+                "test_path": "tests/assets/test_1.png",
+                "config": {
+                    "lpips_net": "vgg",
+                    "force_device": "cpu",
+                    "max_side": 1024,
+                    "overlay_on": "test",
+                    "alpha": 0.45,
+                },
+            }
+        }
+    )
+
 
 class LpipsCompareRequest(BaseModel):
     ref_path: str
     test_path: str
     config: LpipsCompareConfig = Field(default_factory=LpipsCompareConfig)
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ref_path": "tests/assets/ref_1.png",
+                "test_path": "tests/assets/test_1.png",
+                "config": {
+                    "net": "alex",
+                    "force_device": "cpu",
+                    "max_side": 1024,
+                    "overlay_on": "test",
+                    "alpha": 0.45,
+                },
+            }
+        }
+    )
+
 
 class DistsCompareRequest(BaseModel):
     ref_path: str
     test_path: str
     config: DistsCompareConfig = Field(default_factory=DistsCompareConfig)
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ref_path": "tests/assets/ref_1.png",
+                "test_path": "tests/assets/test_1.png",
+                "config": {"force_device": "cpu"},
+            }
+        }
+    )
 
 
 class MetricScoreResponse(BaseModel):
@@ -82,3 +126,31 @@ class CompareAllResponse(BaseModel):
 
 class DistsCompareResponse(BaseModel):
     dists: MetricScoreResponse
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+
+class JobAcceptedResponse(BaseModel):
+    job_id: str
+    status: Literal["queued"]
+    poll_url: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    pair_id: str
+    status: JobStatusName
+    metric: JobMetricName
+    model: str
+    normalize: bool
+    lpips: float | None = None
+    dists: float | None = None
+    timing_ms: int | None = None
+    error_message: str | None = None
+    heatmap_url: str | None = None
+
+
+class JobsListResponse(BaseModel):
+    jobs: list[JobStatusResponse]

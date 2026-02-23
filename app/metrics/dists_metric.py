@@ -1,4 +1,7 @@
-import piq
+try:
+    import piq
+except ImportError:  # pragma: no cover
+    piq = None
 import torch
 
 from app.core.device import resolve_device
