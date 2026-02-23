@@ -187,3 +187,89 @@ API sink payload shape:
 
 - `lpips`: implemented (scalar + heatmap). Nets: `vgg`, `alex`, `squeeze`.
 - `dists`: implemented for scalar scoring.
+
+## Business Value / Wartość Biznesowa
+
+### Supported Models
+
+This API provides image similarity assessment using two perceptual metrics:
+
+#### LPIPS (Learned Perceptual Image Patch Similarity)
+- **Networks**: `alex`, `vgg`, `squeeze`
+- **How it works**: Uses pre-trained convolutional neural networks (AlexNet, VGG, SqueezeNet) as feature extractors to measure perceptual similarity between images
+- **Best for**: General-purpose perceptual comparison, GAN evaluation, image generation quality assessment
+
+#### DISTS (Deep Image Structure and Texture Similarity)
+- **Model**: DISTS (CNN-based)
+- **How it works**: Combines deep features with structural and textural components to evaluate image quality
+- **Best for**: More nuanced image quality assessment capturing both structure and texture differences
+
+### Business Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Automated Quality Control** | Replace manual image comparison with objective, reproducible metrics |
+| **Faster QA Processes** | Instantly compare thousands of images without human intervention |
+| **Consistent Standards** | Ensure consistent quality standards across all visual content |
+| **Cost Reduction** | Reduce time and resources spent on manual review |
+| **Data-Driven Decisions** | Quantify visual effects, support metric-based decisions |
+
+### Use Cases
+
+- **Computer Vision Model Evaluation**: Compare GAN outputs, super-resolution results, or image restoration quality
+- **A/B Testing**: Compare different image processing pipelines or rendering engines
+- **Visual Regression Testing**: Detect unintended visual changes in UI/frontend updates
+- **Content Moderation**: Identify visual similarities between images
+- **Quality Assurance**: Verify image compression, format conversion, or watermarking effects
+
+### Choosing the Right Model
+
+| Model | Speed | Accuracy | Recommended Use |
+|-------|-------|----------|-----------------|
+| `alex` | Fastest | Good | Quick comparisons, high-volume processing |
+| `vgg` | Medium | Best | Precise perceptual matching, research |
+| `squeeze` | Fast | Good | Balanced performance |
+| `dists` | Slower | Excellent | Comprehensive quality assessment |
+
+---
+
+### Obsługiwane modele
+
+Ten API umożliwia ocenę podobieństwa obrazów przy użyciu dwóch metryk percepcyjnych:
+
+#### LPIPS (Learned Perceptual Image Patch Similarity)
+- **Sieci**: `alex`, `vgg`, `squeeze`
+- **Jak działa**: Wykorzystuje wstępnie wytrenowane splotowe sieci neuronowe (AlexNet, VGG, SqueezeNet) jako ekstraktory cech do pomiaru podobieństwa percepcyjnego między obrazami
+- **Najlepsze do**: Ogólnego porównywania percepcyjnego, ewaluacji GAN, oceny jakości generowanych obrazów
+
+#### DISTS (Deep Image Structure and Texture Similarity)
+- **Model**: DISTS (oparty na CNN)
+- **Jak działa**: Łączy cechy głębokie ze składowymi strukturalnymi i teksturalnymi w celu oceny jakości obrazu
+- **Najlepsze do**: Bardziej szczegółowej oceny jakości obrazu, uwzględniającej różnice w strukturze i teksturze
+
+### Korzyści biznesowe
+
+| Korzyść | Opis |
+|---------|------|
+| **Automatyczna kontrola jakości** | Zastąpienie ręcznego porównywania obrazów obiektywnymi, powtarzalnymi metrykami |
+| **Szybsze procesy QA** | Natychmiastowe porównywanie tysięcy obrazów bez interwencji człowieka |
+| **Spójne standardy** | Zapewnienie jednolitych standardów jakości dla wszystkich treści wizualnych |
+| **Redukcja kosztów** | Zmniejszenie czasu i zasobów poświęcanych na ręczne przeglądy |
+| **Decyzje oparte na danych** | Kwantyfikacja efektów wizualnych, wspieranie decyzji opartych na metrykach |
+
+### Przypadki użycia
+
+- **Ewaluacja modeli Computer Vision**: Porównywanie wyników GAN, super-rozdzielczości lub jakości przywracania obrazów
+- **Testy A/B**: Porównywanie różnych potoków przetwarzania obrazów lub silników renderowania
+- **Testy regresji wizualnej**: Wykrywanie niezamierzonych zmian wizualnych w aktualizacjach UI/frontend
+- **Moderacja treści**: Identyfikowanie podobieństw wizualnych między obrazami
+- **Zapewnienie jakości**: Weryfikacja efektów kompresji, konwersji formatów lub znaków wodnych
+
+### Wybór odpowiedniego modelu
+
+| Model | Szybkość | Dokładność | Zalecane użycie |
+|-------|----------|------------|-----------------|
+| `alex` | Najszybsza | Dobra | Szybkie porównania, przetwarzanie dużych wolumenów |
+| `vgg` | Średnia | Najlepsza | Precyzyjne dopasowanie percepcyjne, badania |
+| `squeeze` | Szybka | Dobra | Zrównoważona wydajność |
+| `dists` | Wolniejsza | Wyborna | Kompleksowa ocena jakości |
