@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+
+from app.core import config as app_config
+from app.core import job_store as job_store_module
+
+
+@pytest.fixture(autouse=True)
+def _runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+    yield
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
 
 
 def test_contract_health_response_shape():
@@ -12,8 +26,9 @@ def test_contract_health_response_shape():
 
     assert r.status_code == 200
     data = r.json()
-    assert set(data.keys()) == {"status", "device", "metrics", "git"}
+    assert set(data.keys()) == {"status", "device", "metrics", "job_store", "git"}
     assert data["status"] == "ok"
     assert data["device"] in ("cpu", "cuda")
     assert isinstance(data["metrics"], list)
+    assert set(data["job_store"].keys()) == {"backend", "available"}
     assert set(data["git"].keys()) == {"branch", "tag", "last_commit", "committer", "date"}

@@ -9,6 +9,7 @@ from app.core.heatmap import heatmap_red, normalize_0_1, overlay
 from app.core.image_io import (
     load_rgb_pil,
     match_size,
+    pad_pair_to_min_side,
     pil_to_tensor_minus1_1,
     resize_pair_to_max_side,
 )
@@ -18,6 +19,7 @@ from app.schemas.compare import LpipsDistanceConfig, LpipsHeatmapConfig
 
 class LpipsMetric(Metric):
     name = "lpips"
+    _LPIPS_MIN_SIDE = 64
 
     def __init__(self):
         self._scalar = {}  # net -> model
@@ -48,6 +50,7 @@ class LpipsMetric(Metric):
         # ref_img, tst_img = resize_pair_to_max_side(ref_img, tst_img, config.max_side)
 
         ref_img, tst_img = match_size(ref_img, tst_img)
+        ref_img, tst_img = pad_pair_to_min_side(ref_img, tst_img, self._LPIPS_MIN_SIDE)
 
         ref_t = pil_to_tensor_minus1_1(ref_img, device)
         tst_t = pil_to_tensor_minus1_1(tst_img, device)
@@ -69,6 +72,7 @@ class LpipsMetric(Metric):
 
         ref_img, tst_img = resize_pair_to_max_side(ref_img, tst_img, config.max_side)
         ref_img, tst_img = match_size(ref_img, tst_img)
+        ref_img, tst_img = pad_pair_to_min_side(ref_img, tst_img, self._LPIPS_MIN_SIDE)
 
         ref_t = pil_to_tensor_minus1_1(ref_img, device)
         tst_t = pil_to_tensor_minus1_1(tst_img, device)

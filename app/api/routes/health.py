@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core.build_info import get_git_metadata
@@ -9,6 +9,10 @@ router = APIRouter(tags=["health"])
 
 
 class HealthResponse(BaseModel):
+    class JobStoreInfo(BaseModel):
+        backend: str
+        available: bool
+
     class GitInfo(BaseModel):
         branch: str
         tag: str
@@ -19,6 +23,7 @@ class HealthResponse(BaseModel):
     status: str
     device: str
     metrics: list[str]
+    job_store: JobStoreInfo
     git: GitInfo
 
 
@@ -28,10 +33,18 @@ class HealthResponse(BaseModel):
     summary="Service health",
     description="Returns service status, resolved device, available metrics, and git metadata.",
 )
-def health():
+def health(request: Request):
+    store = getattr(request.app.state, "job_store", None)
+    backend = "unknown"
+    available = False
+    if store is not None:
+        backend = getattr(store, "backend_name", "unknown")
+        available = bool(store.is_available())
+
     return {
         "status": "ok",
         "device": resolve_device(None),
         "metrics": registry.list(),
+        "job_store": {"backend": backend, "available": available},
         "git": get_git_metadata().as_dict(),
     }

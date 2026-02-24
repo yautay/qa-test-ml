@@ -110,19 +110,16 @@ curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d
 ### Notes
 
 - `API_DEBUG=1` (default) returns a detailed JSON 500 response; set `API_DEBUG=0` to disable it.
-- Async jobs worker pool can be tuned with:
-  - `COMPARE_JOB_WORKERS` (default: `2`)
-  - `QUEUE_MAXSIZE` (default: `0`, means unbounded queue)
-- Validation rules:
-  - `COMPARE_JOB_WORKERS` is clamped to `1..(CPU_COUNT * 4)`
-  - `QUEUE_MAXSIZE` lower bound is `0`
-- `/v1/compare/jobs` keeps job state in memory (no persistence after process restart).
+- Async jobs are distributed via Celery + Redis (`JOB_STORE_BACKEND=redis`).
+- Recommended runtime stack is in `tools/runtime/docker-compose.yml`.
+- Monitoring stack is in `tools/monitoring/docker-compose.yml`.
+- Architecture and runbook details are in `docs/architecture-celery-redis.md`.
 - Heatmap endpoint is available only for completed jobs with `metric=lpips` or `metric=both`.
 - Error details endpoint is available only for failed jobs (`status=error`), and detailed stacktrace remains in service logs.
 
 Runtime settings logged on startup:
 
-- API/debug and jobs settings: `API_DEBUG`, `COMPARE_JOB_WORKERS`, `QUEUE_MAXSIZE`, `IMAGE_BASE_DIR`
+- API/debug and runtime settings: `API_DEBUG`, `JOB_STORE_BACKEND`, `IMAGE_BASE_DIR`, `REDIS_URL`
 - Logging settings: `LOG_LEVEL`, `LOG_API_ENABLED`, `LOG_API_URL`, `LOG_API_LEVEL`, `LOG_API_TIMEOUT_MS`, `LOG_SERVICE_NAME`
 - Secret handling: `LOG_API_TOKEN` value is not printed, only `log_api_token_configured: true/false`
 - Git metadata section (`git`) is also logged with branch/tag/last commit details
@@ -156,18 +153,17 @@ API sink payload shape:
 
 - `timestamp`, `level`, `message`, `service`, `branch`, `file`, `class`, `method`, `module`, `function`, `line`, `exception`, `extra`
 
-Job lifecycle debug/error logs (`app/core/jobs.py`):
+Job lifecycle debug/error logs (`app/api/routes/compare.py`, `app/tasks/compare_tasks.py`):
 
 - `Compare job queued` (`DEBUG`) emitted on enqueue
-- `Compare job started` (`DEBUG`) emitted when worker starts processing
-- `Compare job finished` (`DEBUG`) emitted on successful completion
-- `Compare job failed` (`ERROR`) emitted with traceback on failure
+- `Compare task failed` (`ERROR`) emitted with traceback on worker failure
+- `LPIPS heatmap generation failed; marking job as error` (`CRITICAL`) emitted for heatmap failures
 
 Job log context fields (`extra`) include:
 
 - `job_id`, `pair_id`, `metric`, `model`, `normalize`
 - `img_a_name`, `img_b_name`
-- `img_a_path`, `img_b_path` (failure log)
+- `img_a_path`, `img_b_path` (worker failure logs)
 - `timing_ms` (finished/failed logs)
 - `lpips`, `dists`, `has_heatmap` (finished log)
 

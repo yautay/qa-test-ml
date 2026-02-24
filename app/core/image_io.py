@@ -4,7 +4,7 @@ from typing import cast
 
 import torch
 import torchvision.transforms as T
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import get_str
 
@@ -50,6 +50,30 @@ def match_size(ref: Image.Image, tst: Image.Image) -> tuple[Image.Image, Image.I
     if ref.size == tst.size:
         return ref, tst
     return ref, tst.resize(ref.size, resample=_RESAMPLE_BILINEAR)
+
+
+def pad_pair_to_min_side(
+    ref: Image.Image, tst: Image.Image, min_side: int
+) -> tuple[Image.Image, Image.Image]:
+    if min_side < 1:
+        raise ValueError("min_side must be >= 1")
+
+    if ref.size != tst.size:
+        raise ValueError("ref and tst must have the same size")
+
+    w, h = ref.size
+    pad_w = max(0, min_side - w)
+    pad_h = max(0, min_side - h)
+    if pad_w == 0 and pad_h == 0:
+        return ref, tst
+
+    left = pad_w // 2
+    right = pad_w - left
+    top = pad_h // 2
+    bottom = pad_h - top
+    border = (left, top, right, bottom)
+
+    return ImageOps.expand(ref, border=border, fill=0), ImageOps.expand(tst, border=border, fill=0)
 
 
 def ensure_exists(path: str) -> None:

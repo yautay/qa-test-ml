@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: pms-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  api:
+    image: python:3.12-slim
+    container_name: pms-api
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    command: >
+      sh -c "pip install -r requirements.txt &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${API_WORKERS:-2}"
+    depends_on:
+      - redis
+
+  worker-cpu:
+    image: python:3.12-slim
+    container_name: pms-worker-cpu
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace
+    env_file:
+      - .env
+    command: >
+      sh -c "pip install -r requirements.txt &&
+      celery -A app.core.celery_app:celery_app worker
+      -Q ${COMPARE_QUEUE_CPU:-compare-cpu}
+      --concurrency=${CELERY_CPU_CONCURRENCY:-4}
+      --loglevel=${CELERY_LOG_LEVEL:-INFO}"
+    depends_on:
+      - redis
+
+  worker-gpu:
+    image: python:3.12-slim
+    container_name: pms-worker-gpu
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace
+    env_file:
+      - .env
+    command: >
+      sh -c "pip install -r requirements.txt &&
+      celery -A app.core.celery_app:celery_app worker
+      -Q ${COMPARE_QUEUE_GPU:-compare-gpu}
+      --concurrency=${CELERY_GPU_CONCURRENCY:-1}
+      --loglevel=${CELERY_LOG_LEVEL:-INFO}"
+    depends_on:
+      - redis
+    profiles:
+      - gpu
+
+volumes:
+  redis-data:

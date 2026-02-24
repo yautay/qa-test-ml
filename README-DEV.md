@@ -32,6 +32,31 @@ pip install -r requirements-dev.txt
 
 uvicorn app.main:app --reload
 
+## Uruchomienie stacka Celery + Redis (docker compose)
+
+Przygotuj env:
+
+cp tools/runtime/.env.example tools/runtime/.env
+
+Start runtime stack:
+
+docker compose -f tools/runtime/docker-compose.yml --env-file tools/runtime/.env up -d
+
+Start runtime stack z workerem GPU:
+
+docker compose -f tools/runtime/docker-compose.yml --env-file tools/runtime/.env --profile gpu up -d
+
+Monitoring (Prometheus + Grafana + redis exporter):
+
+docker compose -f tools/monitoring/docker-compose.yml up -d
+
+Adresy:
+
+- API: http://localhost:8080
+- Metrics: http://localhost:8080/metrics
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (admin/admin)
+
 Opcjonalnie konfiguracja przez plik:
 
 cp config.toml.example config.toml
@@ -44,9 +69,12 @@ Jak ustawiać zmienne:
 - W `config.toml` w sekcji `[env]`, np. `LOG_LEVEL = "DEBUG"`
 - Jeżeli nie ustawisz żadnej z powyższych, aplikacja bierze wartość domyślną z kodu
 
-Walidacja job settings:
-- COMPARE_JOB_WORKERS: zakres 1..(CPU_COUNT * 4)
-- QUEUE_MAXSIZE: minimum 0
+Główne ustawienia runtime:
+- `JOB_STORE_BACKEND` (`redis` lub `memory`)
+- `REDIS_URL`, `REDIS_PREFIX`
+- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+- `COMPARE_QUEUE_CPU`, `COMPARE_QUEUE_GPU`, `ENABLE_GPU_QUEUE`, `COMPARE_EXECUTION_DEVICE`
+- `CELERY_CPU_CONCURRENCY`, `CELERY_GPU_CONCURRENCY` (w `tools/runtime/.env`)
 
 Podczas startu aplikacji logowane są efektywne ustawienia runtime (API/jobs/logging). Wartości sekretów (np. `LOG_API_TOKEN`) nie są wypisywane wprost.
 
@@ -106,3 +134,9 @@ make full-check
 - Nie commitujemy .venv
 - Używamy pre-commit
 - Każdy commit powinien przechodzić make full-check
+
+## Dokumentacja architektury
+
+- Szczegóły hard-cut migration i architektury: `docs/architecture-celery-redis.md`
+- Konfiguracja runtime compose: `tools/runtime/docker-compose.yml`
+- Konfiguracja monitoringu compose: `tools/monitoring/docker-compose.yml`

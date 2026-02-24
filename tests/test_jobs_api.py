@@ -2,21 +2,47 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core import config as app_config
+from app.core import job_store as job_store_module
+
+
+@pytest.fixture(autouse=True)
+def _test_runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
+    monkeypatch.setenv("CELERY_TASK_ALWAYS_EAGER", "true")
+    monkeypatch.setenv("CELERY_TASK_EAGER_PROPAGATES", "false")
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+    yield
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+
 
 @pytest.fixture()
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
+    from app.core.celery_app import celery_app
     from app.main import create_app
 
-    return TestClient(create_app())
+    old_eager = celery_app.conf.task_always_eager
+    old_propagate = celery_app.conf.task_eager_propagates
+    celery_app.conf.task_always_eager = True
+    celery_app.conf.task_eager_propagates = False
+    try:
+        with TestClient(create_app()) as test_client:
+            yield test_client
+    finally:
+        celery_app.conf.task_always_eager = old_eager
+        celery_app.conf.task_eager_propagates = old_propagate
 
 
 def _install_dummy_metrics(monkeypatch: pytest.MonkeyPatch):
-    import app.core.jobs as jobs_module
+    import app.tasks.compare_tasks as tasks_module
     from app.metrics.base import Metric, MetricResult
 
     class DummyLpips(Metric):
@@ -44,11 +70,11 @@ def _install_dummy_metrics(monkeypatch: pytest.MonkeyPatch):
             return dists
         raise KeyError(name)
 
-    monkeypatch.setattr(jobs_module.registry, "get", _get)
+    monkeypatch.setattr(tasks_module.registry, "get", _get)
 
 
 def _install_failing_metrics(monkeypatch: pytest.MonkeyPatch):
-    import app.core.jobs as jobs_module
+    import app.tasks.compare_tasks as tasks_module
     from app.metrics.base import Metric
 
     class FailingLpips(Metric):
@@ -76,11 +102,43 @@ def _install_failing_metrics(monkeypatch: pytest.MonkeyPatch):
             return dists
         raise KeyError(name)
 
-    monkeypatch.setattr(jobs_module.registry, "get", _get)
+    monkeypatch.setattr(tasks_module.registry, "get", _get)
 
 
-def _wait_done(client: TestClient, job_id: str) -> dict:
-    for _ in range(40):
+def _install_heatmap_failing_metrics(monkeypatch: pytest.MonkeyPatch):
+    import app.tasks.compare_tasks as tasks_module
+    from app.metrics.base import Metric, MetricResult
+
+    class HeatmapFailingLpips(Metric):
+        name = "lpips"
+
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.33, meta={"metric": "lpips"})
+
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            raise RuntimeError("LPIPS heatmap failure")
+
+    class DummyDists(Metric):
+        name = "dists"
+
+        def distance(self, ref_path: str, test_path: str, config) -> MetricResult:
+            return MetricResult(value=0.22, meta={"metric": "dists"})
+
+    lpips = HeatmapFailingLpips()
+    dists = DummyDists()
+
+    def _get(name: str):
+        if name == "lpips":
+            return lpips
+        if name == "dists":
+            return dists
+        raise KeyError(name)
+
+    monkeypatch.setattr(tasks_module.registry, "get", _get)
+
+
+def _wait_terminal(client: TestClient, job_id: str) -> dict:
+    for _ in range(80):
         r = client.get(f"/v1/compare/jobs/{job_id}")
         assert r.status_code == 200
         body = r.json()
@@ -118,9 +176,8 @@ def test_create_job_and_poll_done(monkeypatch: pytest.MonkeyPatch, client: TestC
     body = r.json()
     assert body["job_id"] == job_id
     assert body["status"] == "queued"
-    assert body["poll_url"].endswith(f"/v1/compare/jobs/{job_id}")
 
-    status_body = _wait_done(client, job_id)
+    status_body = _wait_terminal(client, job_id)
     assert status_body["status"] == "done"
     assert status_body["lpips"] == 0.11
     assert status_body["dists"] == 0.22
@@ -147,7 +204,7 @@ def test_jobs_list_and_heatmap_download(monkeypatch: pytest.MonkeyPatch, client:
         },
     )
     assert create_resp.status_code == 202
-    _wait_done(client, job_id)
+    _wait_terminal(client, job_id)
 
     list_resp = client.get("/v1/compare/jobs")
     assert list_resp.status_code == 200
@@ -192,7 +249,7 @@ def test_error_url_and_error_endpoint_for_failed_job(
     )
     assert create_resp.status_code == 202
 
-    status_body = _wait_done(client, job_id)
+    status_body = _wait_terminal(client, job_id)
     assert status_body["status"] == "error"
     assert status_body["error_message"] == "LPIPS backend failure"
     assert status_body["error_url"].endswith(f"/v1/compare/jobs/{job_id}/error")
@@ -225,7 +282,7 @@ def test_error_endpoint_for_non_failed_job(monkeypatch: pytest.MonkeyPatch, clie
         },
     )
     assert create_resp.status_code == 202
-    status_body = _wait_done(client, job_id)
+    status_body = _wait_terminal(client, job_id)
     assert status_body["status"] == "done"
 
     error_resp = client.get(f"/v1/compare/jobs/{job_id}/error")
@@ -236,3 +293,45 @@ def test_error_endpoint_for_missing_job(client: TestClient):
     missing_job_id = str(uuid.uuid4())
     error_resp = client.get(f"/v1/compare/jobs/{missing_job_id}/error")
     assert error_resp.status_code == 404
+
+
+def test_heatmap_failure_marks_job_as_error(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_heatmap_failing_metrics(monkeypatch)
+    job_id = str(uuid.uuid4())
+
+    create_resp = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_heatmap_fail",
+            "metric": "lpips",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.png", _asset_bytes("ref_1.png"), "image/png"),
+            "img_b": ("b.png", _asset_bytes("test_1.png"), "image/png"),
+        },
+    )
+    assert create_resp.status_code == 202
+
+    status_body = _wait_terminal(client, job_id)
+    assert status_body["status"] == "error"
+    assert status_body["lpips"] is None
+    assert status_body["heatmap_url"] is None
+    assert (
+        status_body["error_message"]
+        == "LPIPS heatmap generation failed. Please verify image dimensions/content and retry."
+    )
+
+    heatmap_resp = client.get(f"/v1/compare/jobs/{job_id}/heatmap")
+    assert heatmap_resp.status_code == 404
+
+    error_resp = client.get(f"/v1/compare/jobs/{job_id}/error")
+    assert error_resp.status_code == 200
+    error_body = error_resp.json()
+    assert error_body["status"] == "error"
+    assert (
+        error_body["error_message"]
+        == "LPIPS heatmap generation failed. Please verify image dimensions/content and retry."
+    )

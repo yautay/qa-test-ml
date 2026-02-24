@@ -3,6 +3,19 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core import config as app_config
+from app.core import job_store as job_store_module
+
+
+@pytest.fixture(autouse=True)
+def _runtime(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+    yield
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+
 
 @pytest.fixture()
 def client() -> TestClient:
@@ -19,6 +32,9 @@ def test_health(client: TestClient):
     assert data["device"] in ("cpu", "cuda")
     assert "lpips" in data["metrics"]
     assert "dists" in data["metrics"]
+    assert set(data["job_store"].keys()) == {"backend", "available"}
+    assert data["job_store"]["backend"] in {"memory", "redis", "unknown"}
+    assert isinstance(data["job_store"]["available"], bool)
     assert set(data["git"].keys()) == {"branch", "tag", "last_commit", "committer", "date"}
     assert all(isinstance(value, str) for value in data["git"].values())
 

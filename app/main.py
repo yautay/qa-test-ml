@@ -1,38 +1,20 @@
-import os
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from app.api.routes.compare import router as compare_router
 from app.api.routes.health import router as health_router
 from app.core.build_info import get_git_metadata
 from app.core.config import get_bool, get_int, get_str
-from app.core.jobs import CompareJobManager
+from app.core.job_store import get_job_store
 from app.core.logging import configure_logging
 
 
-def _read_job_runtime_settings() -> tuple[int, int]:
-    workers = get_int("COMPARE_JOB_WORKERS", 2)
-    queue_maxsize = get_int("QUEUE_MAXSIZE", 0)
-
-    if workers < 1:
-        logger.warning("Invalid COMPARE_JOB_WORKERS={} ; using 1", workers)
-        workers = 1
-
-    cpu_count = os.cpu_count() or 1
-    max_workers = max(1, cpu_count * 4)
-    if workers > max_workers:
-        logger.warning(
-            "COMPARE_JOB_WORKERS={} too high for host (max={}) ; capping", workers, max_workers
-        )
-        workers = max_workers
-
-    if queue_maxsize < 0:
-        logger.warning("Invalid QUEUE_MAXSIZE={} ; using 0", queue_maxsize)
-        queue_maxsize = 0
-
-    return workers, queue_maxsize
+def _read_runtime_settings() -> str:
+    backend = get_str("JOB_STORE_BACKEND", "redis").strip().lower() or "redis"
+    return backend
 
 
 def create_app() -> FastAPI:
@@ -53,18 +35,16 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(compare_router)
 
-    jobs_workers, queue_maxsize = _read_job_runtime_settings()
-    jobs_manager = CompareJobManager(workers=jobs_workers, queue_maxsize=queue_maxsize)
-    app.state.compare_jobs = jobs_manager
+    job_store_backend = _read_runtime_settings()
+    app.state.job_store = get_job_store()
 
     @app.on_event("startup")
-    async def _startup_jobs() -> None:
-        await jobs_manager.start()
+    async def _startup() -> None:
         settings = {
             "api_debug": debug,
-            "compare_job_workers": jobs_workers,
-            "queue_maxsize": queue_maxsize,
+            "job_store_backend": job_store_backend,
             "image_base_dir": get_str("IMAGE_BASE_DIR", "."),
+            "redis_url": get_str("REDIS_URL", "").strip(),
             "log_level": get_str("LOG_LEVEL", "INFO"),
             "log_api_enabled": get_bool("LOG_API_ENABLED", default=False),
             "log_api_url": get_str("LOG_API_URL", "").strip(),
@@ -76,11 +56,11 @@ def create_app() -> FastAPI:
         }
         logger.info("Application startup settings: {}", settings)
 
-    @app.on_event("shutdown")
-    async def _shutdown_jobs() -> None:
-        await jobs_manager.stop()
-
     debug = get_bool("API_DEBUG", default=True)
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     if debug:
 
