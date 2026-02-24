@@ -149,6 +149,21 @@ API sink payload shape:
 
 - `timestamp`, `level`, `message`, `service`, `branch`, `file`, `class`, `method`, `module`, `function`, `line`, `exception`, `extra`
 
+Job lifecycle debug/error logs (`app/core/jobs.py`):
+
+- `Compare job queued` (`DEBUG`) emitted on enqueue
+- `Compare job started` (`DEBUG`) emitted when worker starts processing
+- `Compare job finished` (`DEBUG`) emitted on successful completion
+- `Compare job failed` (`ERROR`) emitted with traceback on failure
+
+Job log context fields (`extra`) include:
+
+- `job_id`, `pair_id`, `metric`, `model`, `normalize`
+- `img_a_name`, `img_b_name`
+- `img_a_path`, `img_b_path` (failure log)
+- `timing_ms` (finished/failed logs)
+- `lpips`, `dists`, `has_heatmap` (finished log)
+
 ### Git metadata and healthcheck
 
 `GET /health` now returns a nested `git` object:

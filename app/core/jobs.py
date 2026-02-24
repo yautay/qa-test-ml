@@ -8,6 +8,8 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from loguru import logger
+
 from app.core.config import get_str
 from app.core.registry import registry
 from app.schemas.compare import (
@@ -28,6 +30,8 @@ class JobRecord:
     normalize: bool
     img_a_path: str
     img_b_path: str
+    img_a_name: str
+    img_b_name: str
     status: JobStatusName = "queued"
     lpips: float | None = None
     dists: float | None = None
@@ -86,9 +90,22 @@ class CompareJobManager:
                 normalize=normalize,
                 img_a_path=img_a_path,
                 img_b_path=img_b_path,
+                img_a_name=img_a_name,
+                img_b_name=img_b_name,
             )
             self._jobs[job_id] = job
             await self._queue.put(job_id)
+            logger.bind(
+                class_name="CompareJobManager",
+                method_name="enqueue",
+                job_id=job_id,
+                pair_id=pair_id,
+                metric=metric,
+                model=model,
+                normalize=normalize,
+                img_a_name=img_a_name,
+                img_b_name=img_b_name,
+            ).debug("Compare job queued")
             return job
 
     async def get(self, job_id: str) -> JobRecord | None:
@@ -113,6 +130,17 @@ class CompareJobManager:
             if job is None:
                 return
             job.status = "running"
+        logger.bind(
+            class_name="CompareJobManager",
+            method_name="_run_job",
+            job_id=job.job_id,
+            pair_id=job.pair_id,
+            metric=job.metric,
+            model=job.model,
+            normalize=job.normalize,
+            img_a_name=job.img_a_name,
+            img_b_name=job.img_b_name,
+        ).debug("Compare job started")
 
         started = time.perf_counter()
         try:
@@ -122,8 +150,37 @@ class CompareJobManager:
                 saved = self._jobs[job_id]
                 saved.status = "done"
                 saved.timing_ms = elapsed_ms
+            logger.bind(
+                class_name="CompareJobManager",
+                method_name="_run_job",
+                job_id=job.job_id,
+                pair_id=job.pair_id,
+                metric=job.metric,
+                model=job.model,
+                normalize=job.normalize,
+                img_a_name=job.img_a_name,
+                img_b_name=job.img_b_name,
+                timing_ms=elapsed_ms,
+                lpips=job.lpips,
+                dists=job.dists,
+                has_heatmap=job.heatmap_png is not None,
+            ).debug("Compare job finished")
         except Exception as exc:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
+            logger.bind(
+                class_name="CompareJobManager",
+                method_name="_run_job",
+                job_id=job.job_id,
+                pair_id=job.pair_id,
+                metric=job.metric,
+                model=job.model,
+                normalize=job.normalize,
+                img_a_name=job.img_a_name,
+                img_b_name=job.img_b_name,
+                img_a_path=job.img_a_path,
+                img_b_path=job.img_b_path,
+                timing_ms=elapsed_ms,
+            ).exception("Compare job failed")
             async with self._lock:
                 saved = self._jobs[job_id]
                 saved.status = "error"
