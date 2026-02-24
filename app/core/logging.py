@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
+from app.core.build_info import get_git_metadata
 from app.core.config import get_bool, get_int, get_str
 
 
@@ -38,16 +39,24 @@ class ApiLogSink:
         if record["exception"] is not None:
             exception = str(record["exception"])
 
+        extra = record["extra"]
+        class_name = extra.get("class_name")
+        method_name = extra.get("method_name") or record["function"]
+
         return {
             "timestamp": record["time"].isoformat(),
             "level": record["level"].name,
             "message": record["message"],
             "service": self.service_name,
+            "branch": extra.get("branch"),
+            "file": record["file"].name,
+            "class": class_name,
+            "method": method_name,
             "module": record["module"],
             "function": record["function"],
             "line": record["line"],
             "exception": exception,
-            "extra": record["extra"],
+            "extra": extra,
         }
 
     def write(self, message: Any) -> None:
@@ -71,6 +80,15 @@ class ApiLogSink:
 
 def configure_logging() -> None:
     logger.remove()
+    git_branch = get_git_metadata().branch
+
+    def _patch_record(record: dict[str, Any]) -> None:
+        extra = record["extra"]
+        extra.setdefault("branch", git_branch)
+        extra.setdefault("class_name", None)
+        extra.setdefault("method_name", record["function"])
+
+    logger.configure(patcher=_patch_record)
 
     log_level = get_str("LOG_LEVEL", "INFO")
     logger.add(
@@ -80,8 +98,10 @@ def configure_logging() -> None:
         backtrace=False,
         diagnose=False,
         format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+        "<magenta>{extra[branch]}</magenta> | "
         "<level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<cyan>{file.name}</cyan>:<cyan>{extra[class_name]}</cyan>:<cyan>{extra[method_name]}</cyan>:"
+        "<cyan>{line}</cyan> - "
         "<level>{message}</level>",
     )
 

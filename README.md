@@ -41,6 +41,12 @@ Configuration source priority for runtime settings:
 - `config.toml` in project root (`[env]` section)
 - hardcoded defaults in code
 
+How to set variables:
+
+- System env (highest priority), e.g. `export LOG_LEVEL=DEBUG`
+- `config.toml` in project root (`[env]` section), e.g. `LOG_LEVEL = "DEBUG"`
+- Defaults from application code (used only when neither env nor config file provides a value)
+
 To start with file-based config, copy and edit:
 
 ```bash
@@ -107,6 +113,13 @@ curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d
 - `/v1/compare/jobs` keeps job state in memory (no persistence after process restart).
 - Heatmap endpoint is available only for completed jobs with `metric=lpips` or `metric=both`.
 
+Runtime settings logged on startup:
+
+- API/debug and jobs settings: `API_DEBUG`, `COMPARE_JOB_WORKERS`, `QUEUE_MAXSIZE`, `IMAGE_BASE_DIR`
+- Logging settings: `LOG_LEVEL`, `LOG_API_ENABLED`, `LOG_API_URL`, `LOG_API_LEVEL`, `LOG_API_TIMEOUT_MS`, `LOG_SERVICE_NAME`
+- Secret handling: `LOG_API_TOKEN` value is not printed, only `log_api_token_configured: true/false`
+- Git metadata section (`git`) is also logged with branch/tag/last commit details
+
 ### Logging (Loguru)
 
 The service uses `loguru` with two sinks:
@@ -124,9 +137,38 @@ Environment variables:
 - `LOG_API_TOKEN` - optional bearer token for API sink auth
 - `LOG_SERVICE_NAME` - `service` field in log payload (default: `perceptual-metrics-service`)
 
+Log context fields (console + API sink):
+
+- `timestamp`
+- `branch`
+- `file`
+- `class` (from logger `extra.class_name`, default: `null`)
+- `method` (from logger `extra.method_name`, fallback: function name)
+
 API sink payload shape:
 
-- `timestamp`, `level`, `message`, `service`, `module`, `function`, `line`, `exception`, `extra`
+- `timestamp`, `level`, `message`, `service`, `branch`, `file`, `class`, `method`, `module`, `function`, `line`, `exception`, `extra`
+
+### Git metadata and healthcheck
+
+`GET /health` now returns a nested `git` object:
+
+- `branch`
+- `tag`
+- `last_commit`
+- `committer`
+- `date`
+
+Metadata source priority:
+
+- Env override variables (if set):
+  - `APP_GIT_BRANCH`
+  - `APP_GIT_TAG`
+  - `APP_GIT_LAST_COMMIT`
+  - `APP_GIT_COMMITTER`
+  - `APP_GIT_COMMIT_DATE`
+- Git CLI (from repository state)
+- Fallback value: `unknown`
 
 ### Metrics
 

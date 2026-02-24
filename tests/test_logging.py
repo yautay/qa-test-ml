@@ -12,11 +12,17 @@ class _DummyMessage:
             "time": datetime.now(),
             "level": SimpleNamespace(name="ERROR"),
             "message": "boom",
+            "file": SimpleNamespace(name="main.py"),
             "module": "main",
             "function": "handler",
             "line": 42,
             "exception": RuntimeError("failure"),
-            "extra": {"job_id": "123"},
+            "extra": {
+                "job_id": "123",
+                "branch": "feature/test",
+                "class_name": "CompareService",
+                "method_name": "handle_request",
+            },
         }
 
 
@@ -54,8 +60,17 @@ def test_api_log_sink_posts_expected_payload(monkeypatch):
     assert payload["service"] == "svc"
     assert payload["level"] == "ERROR"
     assert payload["message"] == "boom"
+    assert payload["branch"] == "feature/test"
+    assert payload["file"] == "main.py"
+    assert payload["class"] == "CompareService"
+    assert payload["method"] == "handle_request"
     assert payload["exception"] == "failure"
-    assert payload["extra"] == {"job_id": "123"}
+    assert payload["extra"] == {
+        "job_id": "123",
+        "branch": "feature/test",
+        "class_name": "CompareService",
+        "method_name": "handle_request",
+    }
     assert posted["headers"] == {
         "Content-Type": "application/json",
         "Authorization": "Bearer topsecret",

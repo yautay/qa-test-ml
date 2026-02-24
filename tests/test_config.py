@@ -4,6 +4,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from app.core import build_info
 from app.core import config as app_config
 from app.main import create_app
 
@@ -11,8 +12,10 @@ from app.main import create_app
 @pytest.fixture(autouse=True)
 def _clear_cached_config() -> Iterator[None]:
     app_config._clear_config_cache()
+    build_info._clear_git_metadata_cache()
     yield
     app_config._clear_config_cache()
+    build_info._clear_git_metadata_cache()
 
 
 def test_config_toml_values_are_used_when_env_is_missing(monkeypatch: pytest.MonkeyPatch, tmp_path):
@@ -110,3 +113,19 @@ QUEUE_MAXSIZE = 5
 
     assert jobs_manager._workers_count == 8
     assert jobs_manager._queue.maxsize == 5
+
+
+def test_git_metadata_uses_env_overrides(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_GIT_BRANCH", "release/1.2")
+    monkeypatch.setenv("APP_GIT_TAG", "v1.2.3")
+    monkeypatch.setenv("APP_GIT_LAST_COMMIT", "abc123")
+    monkeypatch.setenv("APP_GIT_COMMITTER", "Jane Doe")
+    monkeypatch.setenv("APP_GIT_COMMIT_DATE", "2026-02-24T10:00:00+00:00")
+
+    metadata = build_info.get_git_metadata()
+
+    assert metadata.branch == "release/1.2"
+    assert metadata.tag == "v1.2.3"
+    assert metadata.last_commit == "abc123"
+    assert metadata.committer == "Jane Doe"
+    assert metadata.date == "2026-02-24T10:00:00+00:00"

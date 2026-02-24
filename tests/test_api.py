@@ -19,6 +19,8 @@ def test_health(client: TestClient):
     assert data["device"] in ("cpu", "cuda")
     assert "lpips" in data["metrics"]
     assert "dists" in data["metrics"]
+    assert set(data["git"].keys()) == {"branch", "tag", "last_commit", "committer", "date"}
+    assert all(isinstance(value, str) for value in data["git"].values())
 
 
 def test_legacy_compare_endpoint_removed(client: TestClient):

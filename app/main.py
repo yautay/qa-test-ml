@@ -6,7 +6,8 @@ from loguru import logger
 
 from app.api.routes.compare import router as compare_router
 from app.api.routes.health import router as health_router
-from app.core.config import get_bool, get_int
+from app.core.build_info import get_git_metadata
+from app.core.config import get_bool, get_int, get_str
 from app.core.jobs import CompareJobManager
 from app.core.logging import configure_logging
 
@@ -59,6 +60,21 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup_jobs() -> None:
         await jobs_manager.start()
+        settings = {
+            "api_debug": debug,
+            "compare_job_workers": jobs_workers,
+            "queue_maxsize": queue_maxsize,
+            "image_base_dir": get_str("IMAGE_BASE_DIR", "."),
+            "log_level": get_str("LOG_LEVEL", "INFO"),
+            "log_api_enabled": get_bool("LOG_API_ENABLED", default=False),
+            "log_api_url": get_str("LOG_API_URL", "").strip(),
+            "log_api_level": get_str("LOG_API_LEVEL", "ERROR"),
+            "log_api_timeout_ms": get_int("LOG_API_TIMEOUT_MS", 2000),
+            "log_service_name": get_str("LOG_SERVICE_NAME", "perceptual-metrics-service"),
+            "log_api_token_configured": bool(get_str("LOG_API_TOKEN", "").strip()),
+            "git": get_git_metadata().as_dict(),
+        }
+        logger.info("Application startup settings: {}", settings)
 
     @app.on_event("shutdown")
     async def _shutdown_jobs() -> None:
