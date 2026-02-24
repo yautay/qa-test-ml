@@ -3,9 +3,9 @@ uvicorn[standard]==0.30.6
 pydantic==2.12.5
 pillow==12.1.1
 lpips==0.1.4
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
-numpy==1.26.4
+torch==2.10.0
+torchvision==0.25.0
+numpy==2.4.1
 piq==0.8.0
 httpx==0.28.1
 loguru==0.7.3
@@ -13,5 +13,3 @@ python-multipart==0.0.20
 celery==5.5.3
 redis==5.3.1
 prometheus-client==0.23.1
-
---extra-index-url https://download.pytorch.org/whl/cpu

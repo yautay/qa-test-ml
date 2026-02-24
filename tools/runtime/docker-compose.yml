@@ -1,4 +1,15 @@
-version: "3.9"
+# Perceptual Metrics Service - Docker Compose
+#
+# Usage:
+#   - Development/CPU:  docker compose up --build
+#   - Production/GPU:   docker compose --profile gpu up --build
+#
+# Requirements:
+#   - requirements.txt (CPU-only) - default for dev/test
+#   - requirements.prod.txt (GPU) - for production with NVIDIA GPU
+#
+# Note: Requires nvidia-container-toolkit for GPU support
+#       https://github.com/NVIDIA/nvidia-docker
 
 services:
   redis:
@@ -9,6 +20,7 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
+    mem_limit: 512m
 
   api:
     image: python:3.12-slim
@@ -20,11 +32,15 @@ services:
       - .env
     ports:
       - "8080:8080"
+    environment:
+      - API_WORKERS=1
     command: >
-      sh -c "pip install -r requirements.txt &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${API_WORKERS:-2}"
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers \${API_WORKERS:-1}"
     depends_on:
       - redis
+    mem_limit: 2g
+    cpus: 2
 
   worker-cpu:
     image: python:3.12-slim
@@ -34,14 +50,18 @@ services:
       - ../../:/workspace
     env_file:
       - .env
+    environment:
+      - CELERY_CPU_CONCURRENCY=1
     command: >
-      sh -c "pip install -r requirements.txt &&
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker
-      -Q ${COMPARE_QUEUE_CPU:-compare-cpu}
-      --concurrency=${CELERY_CPU_CONCURRENCY:-4}
-      --loglevel=${CELERY_LOG_LEVEL:-INFO}"
+      -Q \${COMPARE_QUEUE_CPU:-compare-cpu}
+      --concurrency=\${CELERY_CPU_CONCURRENCY:-1}
+      --loglevel=\${CELERY_LOG_LEVEL:-INFO}"
     depends_on:
       - redis
+    mem_limit: 2g
+    cpus: 2
 
   worker-gpu:
     image: python:3.12-slim
@@ -51,14 +71,24 @@ services:
       - ../../:/workspace
     env_file:
       - .env
+    environment:
+      - CELERY_GPU_CONCURRENCY=1
+    # For GPU, use requirements.prod.txt instead
     command: >
-      sh -c "pip install -r requirements.txt &&
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker
-      -Q ${COMPARE_QUEUE_GPU:-compare-gpu}
-      --concurrency=${CELERY_GPU_CONCURRENCY:-1}
-      --loglevel=${CELERY_LOG_LEVEL:-INFO}"
+      -Q \${COMPARE_QUEUE_GPU:-compare-gpu}
+      --concurrency=\${CELERY_GPU_CONCURRENCY:-1}
+      --loglevel=\${CELERY_LOG_LEVEL:-INFO}"
     depends_on:
       - redis
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     profiles:
       - gpu
 

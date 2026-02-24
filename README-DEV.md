@@ -38,13 +38,23 @@ Przygotuj env:
 
 cp tools/runtime/.env.example tools/runtime/.env
 
-Start runtime stack:
+### CPU (domyślnie)
 
-docker compose -f tools/runtime/docker-compose.yml --env-file tools/runtime/.env up -d
+Używa `requirements.txt` z wersją CPU-only PyTorch (~200MB):
+```bash
+docker compose -f tools/runtime/docker-compose.yml up --build
+```
 
-Start runtime stack z workerem GPU:
+### GPU (produkcja)
 
-docker compose -f tools/runtime/docker-compose.yml --env-file tools/runtime/.env --profile gpu up -d
+Wymaga `nvidia-container-toolkit` i używa pełnego PyTorch z CUDA (~3GB):
+```bash
+# Najpierw podmień requirements na GPU:
+cp requirements.prod.txt requirements.txt
+
+# Potem uruchom z profilem gpu:
+docker compose -f tools/runtime/docker-compose.yml --profile gpu up --build
+```
 
 Monitoring (Prometheus + Grafana + redis exporter):
 
@@ -122,9 +132,9 @@ make full-check
 
 ## Struktura zależności
 
-- requirements.txt – runtime
-- requirements-dev.txt – dev/test
-- requirements.lock.txt – pełny lock (opcjonalnie)
+- `requirements.txt` – runtime (CPU-only, do dev/test)
+- `requirements.prod.txt` – runtime (GPU, do produkcji)
+- `requirements-dev.txt` – dev/test
 
 ---
 
