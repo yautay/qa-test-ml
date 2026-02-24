@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description=(
             "API for LPIPS/DISTS image similarity scoring and LPIPS heatmap generation. "
-            "Supports synchronous compare endpoints and asynchronous jobs API."
+            "Supports asynchronous comparison jobs API."
         ),
         openapi_tags=[
             {"name": "health", "description": "Service health and readiness."},

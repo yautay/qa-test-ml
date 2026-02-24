@@ -8,9 +8,8 @@ Serwis FastAPI do porownywania dwoch obrazow przy uzyciu metryk percepcyjnych (L
 
 ### What it does
 
-- Compares two images available on the server filesystem
-- Returns LPIPS + DISTS scores and LPIPS heatmap in one response (`/compare`)
-- Supports dedicated endpoints for LPIPS (`/compare/lpips`) and DISTS (`/compare/dists`)
+- Accepts asynchronous image comparison jobs via `v1` endpoints
+- Computes LPIPS and/or DISTS scores, with optional LPIPS heatmap output
 
 ### Requirements
 
@@ -65,57 +64,6 @@ Health:
 curl http://127.0.0.1:8080/health
 ```
 
-Compare all (JSON -> JSON):
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref_path": "tests/assets/ref_1.png",
-    "test_path": "tests/assets/test_1.png",
-    "config": {
-      "lpips_net": "vgg",
-      "force_device": null,
-      "max_side": 1024,
-      "overlay_on": "test",
-      "alpha": 0.45
-    }
-  }'
-```
-
-
-LPIPS only (JSON -> JSON):
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare/lpips" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref_path": "tests/assets/ref_1.png",
-    "test_path": "tests/assets/test_1.png",
-    "config": {
-      "net": "vgg",
-      "force_device": null,
-      "max_side": 1024,
-      "overlay_on": "test",
-      "alpha": 0.45
-    }
-  }'
-```
-
-DISTS only (JSON -> JSON):
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/compare/dists" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ref_path": "tests/assets/ref_1.png",
-    "test_path": "tests/assets/test_1.png",
-    "config": {
-      "force_device": null
-    }
-  }'
-```
-
 Create async comparison job (multipart/form-data):
 
 ```bash
@@ -149,9 +97,6 @@ curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d
 
 ### Notes
 
-- `ref_path`/`test_path` are paths on the server running the API (this service does not upload files).
-- `ref_path`/`test_path` must resolve inside `IMAGE_BASE_DIR` (default: current working directory).
-- GPU: you need a CUDA-enabled PyTorch build; then set `config.force_device` to `"cuda"`.
 - `API_DEBUG=1` (default) returns a detailed JSON 500 response; set `API_DEBUG=0` to disable it.
 - Async jobs worker pool can be tuned with:
   - `COMPARE_JOB_WORKERS` (default: `2`)

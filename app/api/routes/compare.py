@@ -1,86 +1,20 @@
-import base64
 from typing import cast
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 
 from app.core.jobs import CompareJobManager
-from app.core.registry import registry
 from app.schemas.compare import (
-    CompareAllRequest,
-    CompareAllResponse,
-    DistsCompareRequest,
-    DistsCompareResponse,
-    DistsDistanceConfig,
     ErrorResponse,
     JobAcceptedResponse,
     JobMetricName,
     JobsListResponse,
     JobStatusResponse,
-    LpipsCompareRequest,
-    LpipsCompareResponse,
-    LpipsDistanceConfig,
-    LpipsHeatmapConfig,
 )
 
 router = APIRouter(prefix="", tags=["compare"])
 IMG_A_FILE = File(..., description="First image file")
 IMG_B_FILE = File(..., description="Second image file")
-
-
-def _encode_png_base64(png: bytes) -> str:
-    return base64.b64encode(png).decode("ascii")
-
-
-@router.post(
-    "/compare",
-    response_model=CompareAllResponse,
-    summary="Compare images with LPIPS and DISTS",
-    description="Computes LPIPS scalar, DISTS scalar, and LPIPS heatmap (base64 PNG) in one response.",
-    responses={
-        200: {"description": "LPIPS + DISTS + LPIPS heatmap"},
-        400: {"model": ErrorResponse, "description": "Invalid input or unsupported settings"},
-        403: {"model": ErrorResponse, "description": "Path outside IMAGE_BASE_DIR"},
-        404: {"model": ErrorResponse, "description": "Input file not found"},
-        422: {"description": "Validation error"},
-    },
-)
-def compare(req: CompareAllRequest):
-    try:
-        lpips_metric = registry.get("lpips")
-        dists_metric = registry.get("dists")
-
-        lpips_dist_cfg = LpipsDistanceConfig(
-            net=req.config.lpips_net, force_device=req.config.force_device
-        )
-        lpips_heat_cfg = LpipsHeatmapConfig(
-            net=req.config.lpips_net,
-            force_device=req.config.force_device,
-            max_side=req.config.max_side,
-            overlay_on=req.config.overlay_on,
-            alpha=req.config.alpha,
-        )
-        dists_dist_cfg = DistsDistanceConfig(force_device=req.config.force_device)
-
-        lpips_result = lpips_metric.distance(req.ref_path, req.test_path, lpips_dist_cfg)
-        dists_result = dists_metric.distance(req.ref_path, req.test_path, dists_dist_cfg)
-        lpips_heatmap = lpips_metric.heatmap_png(req.ref_path, req.test_path, lpips_heat_cfg)
-
-        return {
-            "lpips": {"value": lpips_result.value, "meta": lpips_result.meta},
-            "dists": {"value": dists_result.value, "meta": dists_result.meta},
-            "lpips_heatmap_png_base64": _encode_png_base64(lpips_heatmap),
-        }
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except NotImplementedError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {e}") from e
-    except KeyError as e:
-        raise HTTPException(status_code=400, detail=f"Metric not registered: {e}") from e
 
 
 def _job_to_status_response(job, request: Request) -> JobStatusResponse:
@@ -237,80 +171,3 @@ async def get_compare_job_heatmap(request: Request, job_id: str):
     if job.status != "done" or job.heatmap_png is None:
         raise HTTPException(status_code=404, detail=f"Heatmap not available for job: {job_id}")
     return Response(content=job.heatmap_png, media_type="image/png")
-
-
-@router.post(
-    "/compare/lpips",
-    response_model=LpipsCompareResponse,
-    summary="Compare images with LPIPS",
-    description="Computes LPIPS scalar score and LPIPS heatmap as base64-encoded PNG.",
-    responses={
-        200: {"description": "LPIPS score and heatmap"},
-        400: {"model": ErrorResponse, "description": "Invalid input or unsupported settings"},
-        403: {"model": ErrorResponse, "description": "Path outside IMAGE_BASE_DIR"},
-        404: {"model": ErrorResponse, "description": "Input file not found"},
-        422: {"description": "Validation error"},
-    },
-)
-def compare_lpips(req: LpipsCompareRequest):
-    try:
-        lpips_metric = registry.get("lpips")
-
-        lpips_dist_cfg = LpipsDistanceConfig(
-            net=req.config.net, force_device=req.config.force_device
-        )
-        lpips_heat_cfg = LpipsHeatmapConfig(
-            net=req.config.net,
-            force_device=req.config.force_device,
-            max_side=req.config.max_side,
-            overlay_on=req.config.overlay_on,
-            alpha=req.config.alpha,
-        )
-
-        lpips_result = lpips_metric.distance(req.ref_path, req.test_path, lpips_dist_cfg)
-        lpips_heatmap = lpips_metric.heatmap_png(req.ref_path, req.test_path, lpips_heat_cfg)
-
-        return {
-            "lpips": {"value": lpips_result.value, "meta": lpips_result.meta},
-            "lpips_heatmap_png_base64": _encode_png_base64(lpips_heatmap),
-        }
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except NotImplementedError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {e}") from e
-    except KeyError as e:
-        raise HTTPException(status_code=400, detail=f"Metric not registered: {e}") from e
-
-
-@router.post(
-    "/compare/dists",
-    response_model=DistsCompareResponse,
-    summary="Compare images with DISTS",
-    description="Computes DISTS scalar score for a pair of images.",
-    responses={
-        200: {"description": "DISTS score"},
-        400: {"model": ErrorResponse, "description": "Invalid input or unsupported settings"},
-        403: {"model": ErrorResponse, "description": "Path outside IMAGE_BASE_DIR"},
-        404: {"model": ErrorResponse, "description": "Input file not found"},
-        422: {"description": "Validation error"},
-    },
-)
-def compare_dists(req: DistsCompareRequest):
-    try:
-        dists_metric = registry.get("dists")
-        dists_dist_cfg = DistsDistanceConfig(force_device=req.config.force_device)
-        dists_result = dists_metric.distance(req.ref_path, req.test_path, dists_dist_cfg)
-
-        return {"dists": {"value": dists_result.value, "meta": dists_result.meta}}
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=f"File not found: {e}") from e
-    except KeyError as e:
-        raise HTTPException(status_code=400, detail=f"Metric not registered: {e}") from e

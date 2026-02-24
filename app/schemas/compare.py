@@ -1,8 +1,7 @@
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-MetricName = Literal["lpips", "dists"]
 JobMetricName = Literal["lpips", "dists", "both"]
 JobStatusName = Literal["queued", "running", "done", "error"]
 
@@ -30,102 +29,6 @@ class LpipsHeatmapConfig(HeatmapBaseConfig):
 
 class DistsDistanceConfig(DistanceBaseConfig):
     metric: Literal["dists"] = "dists"
-
-
-class DistsHeatmapConfig(HeatmapBaseConfig):
-    metric: Literal["dists"] = "dists"
-
-
-class LpipsCompareConfig(HeatmapBaseConfig):
-    net: Literal["vgg", "alex", "squeeze"] = "vgg"
-
-
-class DistsCompareConfig(DistanceBaseConfig):
-    pass
-
-
-class CompareAllConfig(HeatmapBaseConfig):
-    lpips_net: Literal["vgg", "alex", "squeeze"] = "vgg"
-
-
-class CompareAllRequest(BaseModel):
-    ref_path: str
-    test_path: str
-    config: CompareAllConfig = Field(default_factory=CompareAllConfig)
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "ref_path": "tests/assets/ref_1.png",
-                "test_path": "tests/assets/test_1.png",
-                "config": {
-                    "lpips_net": "vgg",
-                    "force_device": "cpu",
-                    "max_side": 1024,
-                    "overlay_on": "test",
-                    "alpha": 0.45,
-                },
-            }
-        }
-    )
-
-
-class LpipsCompareRequest(BaseModel):
-    ref_path: str
-    test_path: str
-    config: LpipsCompareConfig = Field(default_factory=LpipsCompareConfig)
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "ref_path": "tests/assets/ref_1.png",
-                "test_path": "tests/assets/test_1.png",
-                "config": {
-                    "net": "alex",
-                    "force_device": "cpu",
-                    "max_side": 1024,
-                    "overlay_on": "test",
-                    "alpha": 0.45,
-                },
-            }
-        }
-    )
-
-
-class DistsCompareRequest(BaseModel):
-    ref_path: str
-    test_path: str
-    config: DistsCompareConfig = Field(default_factory=DistsCompareConfig)
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "ref_path": "tests/assets/ref_1.png",
-                "test_path": "tests/assets/test_1.png",
-                "config": {"force_device": "cpu"},
-            }
-        }
-    )
-
-
-class MetricScoreResponse(BaseModel):
-    value: float
-    meta: dict[str, Any]
-
-
-class LpipsCompareResponse(BaseModel):
-    lpips: MetricScoreResponse
-    lpips_heatmap_png_base64: str
-
-
-class CompareAllResponse(BaseModel):
-    lpips: MetricScoreResponse
-    dists: MetricScoreResponse
-    lpips_heatmap_png_base64: str
-
-
-class DistsCompareResponse(BaseModel):
-    dists: MetricScoreResponse
 
 
 class ErrorResponse(BaseModel):

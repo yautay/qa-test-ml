@@ -128,13 +128,10 @@ def test_jobs_list_and_heatmap_download(monkeypatch: pytest.MonkeyPatch, client:
     assert heatmap_resp.content.startswith(b"\x89PNG")
 
 
-def test_openapi_contains_jobs_and_compare_paths(client: TestClient):
+def test_openapi_contains_jobs_paths(client: TestClient):
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     paths = resp.json()["paths"]
-    assert "/compare" in paths
-    assert "/compare/lpips" in paths
-    assert "/compare/dists" in paths
     assert "/v1/compare/jobs" in paths
     assert "/v1/compare/jobs/{job_id}" in paths
     assert "/v1/compare/jobs/{job_id}/heatmap" in paths
