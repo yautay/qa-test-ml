@@ -35,7 +35,9 @@ services:
     environment:
       - API_WORKERS=1
     command: >
-      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      sh -c "apt-get update && apt-get install -y git &&
+      git config --global --add safe.directory /workspace &&
+      pip install --no-cache-dir -r requirements.txt &&
       uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers \${API_WORKERS:-1}"
     depends_on:
       - redis
@@ -53,7 +55,9 @@ services:
     environment:
       - CELERY_CPU_CONCURRENCY=1
     command: >
-      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      sh -c "apt-get update && apt-get install -y git &&
+      git config --global --add safe.directory /workspace &&
+      pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker
       -Q \${COMPARE_QUEUE_CPU:-compare-cpu}
       --concurrency=\${CELERY_CPU_CONCURRENCY:-1}
@@ -75,7 +79,9 @@ services:
       - CELERY_GPU_CONCURRENCY=1
     # For GPU, use requirements.prod.txt instead
     command: >
-      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      sh -c "apt-get update && apt-get install -y git &&
+      git config --global --add safe.directory /workspace &&
+      pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker
       -Q \${COMPARE_QUEUE_GPU:-compare-gpu}
       --concurrency=\${CELERY_GPU_CONCURRENCY:-1}
