@@ -52,8 +52,16 @@ class JobStatusResponse(BaseModel):
     dists: float | None = None
     timing_ms: int | None = None
     error_message: str | None = None
+    error_url: str | None = None
     heatmap_url: str | None = None
 
 
 class JobsListResponse(BaseModel):
     jobs: list[JobStatusResponse]
+
+
+class JobErrorResponse(BaseModel):
+    job_id: str
+    status: Literal["error"]
+    error_message: str
+    timing_ms: int | None = None

@@ -89,6 +89,12 @@ Get async job status:
 curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea"
 ```
 
+Get async job error details (only when status is `error`):
+
+```bash
+curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/error"
+```
+
 List all async jobs:
 
 ```bash
@@ -112,6 +118,7 @@ curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d
   - `QUEUE_MAXSIZE` lower bound is `0`
 - `/v1/compare/jobs` keeps job state in memory (no persistence after process restart).
 - Heatmap endpoint is available only for completed jobs with `metric=lpips` or `metric=both`.
+- Error details endpoint is available only for failed jobs (`status=error`), and detailed stacktrace remains in service logs.
 
 Runtime settings logged on startup:
 

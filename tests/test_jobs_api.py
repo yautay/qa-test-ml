@@ -47,6 +47,38 @@ def _install_dummy_metrics(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(jobs_module.registry, "get", _get)
 
 
+def _install_failing_metrics(monkeypatch: pytest.MonkeyPatch):
+    import app.core.jobs as jobs_module
+    from app.metrics.base import Metric
+
+    class FailingLpips(Metric):
+        name = "lpips"
+
+        def distance(self, ref_path: str, test_path: str, config):
+            raise RuntimeError("LPIPS backend failure")
+
+        def heatmap_png(self, ref_path: str, test_path: str, config) -> bytes:
+            return b""
+
+    class DummyDists(Metric):
+        name = "dists"
+
+        def distance(self, ref_path: str, test_path: str, config):
+            raise AssertionError("dists should not be called for lpips metric")
+
+    lpips = FailingLpips()
+    dists = DummyDists()
+
+    def _get(name: str):
+        if name == "lpips":
+            return lpips
+        if name == "dists":
+            return dists
+        raise KeyError(name)
+
+    monkeypatch.setattr(jobs_module.registry, "get", _get)
+
+
 def _wait_done(client: TestClient, job_id: str) -> dict:
     for _ in range(40):
         r = client.get(f"/v1/compare/jobs/{job_id}")
@@ -135,3 +167,72 @@ def test_openapi_contains_jobs_paths(client: TestClient):
     assert "/v1/compare/jobs" in paths
     assert "/v1/compare/jobs/{job_id}" in paths
     assert "/v1/compare/jobs/{job_id}/heatmap" in paths
+    assert "/v1/compare/jobs/{job_id}/error" in paths
+
+
+def test_error_url_and_error_endpoint_for_failed_job(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
+    _install_failing_metrics(monkeypatch)
+    job_id = str(uuid.uuid4())
+
+    create_resp = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_fail",
+            "metric": "lpips",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.png", _asset_bytes("ref_1.png"), "image/png"),
+            "img_b": ("b.png", _asset_bytes("test_1.png"), "image/png"),
+        },
+    )
+    assert create_resp.status_code == 202
+
+    status_body = _wait_done(client, job_id)
+    assert status_body["status"] == "error"
+    assert status_body["error_message"] == "LPIPS backend failure"
+    assert status_body["error_url"].endswith(f"/v1/compare/jobs/{job_id}/error")
+
+    error_resp = client.get(f"/v1/compare/jobs/{job_id}/error")
+    assert error_resp.status_code == 200
+    error_body = error_resp.json()
+    assert error_body["job_id"] == job_id
+    assert error_body["status"] == "error"
+    assert error_body["error_message"] == "LPIPS backend failure"
+    assert isinstance(error_body["timing_ms"], int)
+
+
+def test_error_endpoint_for_non_failed_job(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    job_id = str(uuid.uuid4())
+
+    create_resp = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_ok",
+            "metric": "lpips",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.png", _asset_bytes("ref_1.png"), "image/png"),
+            "img_b": ("b.png", _asset_bytes("test_1.png"), "image/png"),
+        },
+    )
+    assert create_resp.status_code == 202
+    status_body = _wait_done(client, job_id)
+    assert status_body["status"] == "done"
+
+    error_resp = client.get(f"/v1/compare/jobs/{job_id}/error")
+    assert error_resp.status_code == 409
+
+
+def test_error_endpoint_for_missing_job(client: TestClient):
+    missing_job_id = str(uuid.uuid4())
+    error_resp = client.get(f"/v1/compare/jobs/{missing_job_id}/error")
+    assert error_resp.status_code == 404

@@ -7,6 +7,7 @@ from app.core.jobs import CompareJobManager
 from app.schemas.compare import (
     ErrorResponse,
     JobAcceptedResponse,
+    JobErrorResponse,
     JobMetricName,
     JobsListResponse,
     JobStatusResponse,
@@ -19,8 +20,11 @@ IMG_B_FILE = File(..., description="Second image file")
 
 def _job_to_status_response(job, request: Request) -> JobStatusResponse:
     heatmap_url = None
+    error_url = None
     if job.heatmap_png is not None and job.status == "done":
         heatmap_url = str(request.url_for("get_compare_job_heatmap", job_id=job.job_id))
+    if job.status == "error":
+        error_url = str(request.url_for("get_compare_job_error", job_id=job.job_id))
 
     return JobStatusResponse(
         job_id=job.job_id,
@@ -33,6 +37,7 @@ def _job_to_status_response(job, request: Request) -> JobStatusResponse:
         dists=job.dists,
         timing_ms=job.timing_ms,
         error_message=job.error_message,
+        error_url=error_url,
         heatmap_url=heatmap_url,
     )
 
@@ -171,3 +176,32 @@ async def get_compare_job_heatmap(request: Request, job_id: str):
     if job.status != "done" or job.heatmap_png is None:
         raise HTTPException(status_code=404, detail=f"Heatmap not available for job: {job_id}")
     return Response(content=job.heatmap_png, media_type="image/png")
+
+
+@router.get(
+    "/v1/compare/jobs/{job_id}/error",
+    response_model=JobErrorResponse,
+    name="get_compare_job_error",
+    summary="Get compare job error details",
+    description="Returns error details for a failed async comparison job.",
+    responses={
+        200: {"description": "Job error details"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        409: {"model": ErrorResponse, "description": "Job is not in error state"},
+        503: {"model": ErrorResponse, "description": "Jobs manager unavailable"},
+    },
+)
+async def get_compare_job_error(request: Request, job_id: str):
+    manager = _get_jobs_manager(request)
+    job = await manager.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    if job.status != "error":
+        raise HTTPException(status_code=409, detail=f"Job is not in error state: {job_id}")
+
+    return {
+        "job_id": job.job_id,
+        "status": "error",
+        "error_message": job.error_message or "Unknown compare job error",
+        "timing_ms": job.timing_ms,
+    }
