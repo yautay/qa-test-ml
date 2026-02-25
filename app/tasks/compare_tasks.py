@@ -11,6 +11,7 @@ from loguru import logger
 
 from app.core.celery_app import celery_app
 from app.core.config import get_str
+from app.core.execution import queue_names
 from app.core.job_store import get_job_store
 from app.core.metrics import (
     job_duration_seconds,
@@ -27,8 +28,14 @@ from app.schemas.compare import (
     LpipsHeatmapConfig,
 )
 
-_HEATMAP_ERROR_MESSAGE = (
-    "LPIPS heatmap generation failed. Please verify image dimensions/content and retry."
+_HEATMAP_ERROR_MESSAGE = "LPIPS heatmap generation failed. Please verify image dimensions/content and retry."
+_GPU_ERROR_TOKENS = (
+    "cuda",
+    "cudnn",
+    "cublas",
+    "nvidia",
+    "not compiled with cuda",
+    "out of memory",
 )
 
 
@@ -47,6 +54,13 @@ def _cleanup(paths: list[str]) -> None:
             os.remove(path)
 
 
+def _is_gpu_failure(exc: Exception) -> bool:
+    text = str(exc).strip().lower()
+    if not text:
+        return False
+    return any(token in text for token in _GPU_ERROR_TOKENS)
+
+
 @celery_app.task(name="app.tasks.compare_tasks.process_compare_job")
 def process_compare_job(
     *,
@@ -59,6 +73,8 @@ def process_compare_job(
     img_b_name: str,
     img_a_b64: str,
     img_b_b64: str,
+    force_device: Literal["cpu", "cuda"] | None = None,
+    fallback_from_gpu: bool = False,
 ) -> None:
     store = get_job_store()
 
@@ -76,12 +92,13 @@ def process_compare_job(
     img_b_path = _store_temp_image(img_b_bytes, img_b_name)
 
     final_status = "error"
+    observe_duration = True
     try:
         if metric in {"lpips", "both"}:
             lpips_metric = registry.get("lpips")
             lpips_net = cast(Literal["vgg", "alex", "squeeze"], model)
-            lpips_dist_cfg = LpipsDistanceConfig(net=lpips_net)
-            lpips_heat_cfg = LpipsHeatmapConfig(net=lpips_net)
+            lpips_dist_cfg = LpipsDistanceConfig(net=lpips_net, force_device=force_device)
+            lpips_heat_cfg = LpipsHeatmapConfig(net=lpips_net, force_device=force_device)
             lpips_result = lpips_metric.distance(img_a_path, img_b_path, lpips_dist_cfg)
             heatmap_png = None
             try:
@@ -99,9 +116,7 @@ def process_compare_job(
                     img_b_name=img_b_name,
                     img_a_path=img_a_path,
                     img_b_path=img_b_path,
-                ).opt(exception=exc).critical(
-                    "LPIPS heatmap generation failed; marking job as error"
-                )
+                ).opt(exception=exc).critical("LPIPS heatmap generation failed; marking job as error")
                 raise RuntimeError(_HEATMAP_ERROR_MESSAGE) from exc
 
             store.update_job(job_id, lpips=lpips_result.value)
@@ -110,7 +125,7 @@ def process_compare_job(
 
         if metric in {"dists", "both"}:
             dists_metric = registry.get("dists")
-            dists_cfg = DistsDistanceConfig()
+            dists_cfg = DistsDistanceConfig(force_device=force_device)
             dists_result = dists_metric.distance(img_a_path, img_b_path, dists_cfg)
             store.update_job(job_id, dists=dists_result.value)
 
@@ -119,6 +134,43 @@ def process_compare_job(
         jobs_finished_total.labels(metric=metric).inc()
         final_status = "done"
     except Exception as exc:
+        should_fallback = force_device == "cuda" and not fallback_from_gpu and _is_gpu_failure(exc)
+        if should_fallback:
+            cpu_queue, _ = queue_names()
+            logger.bind(
+                class_name="CompareTask",
+                method_name="process_compare_job",
+                job_id=job_id,
+                pair_id=pair_id,
+                metric=metric,
+                model=model,
+                normalize=normalize,
+                img_a_name=img_a_name,
+                img_b_name=img_b_name,
+                fallback_queue=cpu_queue,
+            ).opt(exception=exc).warning("GPU execution failed; retrying job on CPU queue")
+            store.update_job(job_id, status="queued", error_message=None)
+            celery_app.signature(
+                "app.tasks.compare_tasks.process_compare_job",
+                kwargs={
+                    "job_id": job_id,
+                    "pair_id": pair_id,
+                    "metric": metric,
+                    "model": model,
+                    "normalize": normalize,
+                    "img_a_name": img_a_name,
+                    "img_b_name": img_b_name,
+                    "img_a_b64": img_a_b64,
+                    "img_b_b64": img_b_b64,
+                    "force_device": "cpu",
+                    "fallback_from_gpu": True,
+                },
+                queue=cpu_queue,
+            ).apply_async()
+            final_status = "queued"
+            observe_duration = False
+            return
+
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         logger.bind(
             class_name="CompareTask",
@@ -139,7 +191,8 @@ def process_compare_job(
         raise
     finally:
         jobs_inflight.dec()
-        job_duration_seconds.labels(metric=metric, status=final_status).observe(
-            max(0.0, time.perf_counter() - started)
-        )
+        if observe_duration:
+            job_duration_seconds.labels(metric=metric, status=final_status).observe(
+                max(0.0, time.perf_counter() - started)
+            )
         _cleanup([path for path in (img_a_path, img_b_path) if path])

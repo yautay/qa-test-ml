@@ -6,8 +6,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, Response, Upl
 from loguru import logger
 
 from app.core.celery_app import celery_app
-from app.core.config import get_bool, get_str
-from app.core.device import resolve_device
+from app.core.execution import queue_names, select_queue_for_job
 from app.core.job_store import JobState, get_job_store, now_ms
 from app.core.metrics import jobs_submitted_total
 from app.schemas.compare import (
@@ -51,32 +50,13 @@ def _job_to_status_response(job: JobState, request: Request) -> JobStatusRespons
 def _get_job_store(request: Request):
     store = getattr(request.app.state, "job_store", None)
     if store is None:
-        logger.bind(class_name="CompareAPI", method_name="_get_job_store").error(
-            "Job store is not available"
-        )
+        logger.bind(class_name="CompareAPI", method_name="_get_job_store").error("Job store is not available")
         raise HTTPException(status_code=503, detail="Job store is not available")
     return store
 
 
 def _select_queue() -> str:
-    cpu_queue = get_str("COMPARE_QUEUE_CPU", "compare-cpu").strip() or "compare-cpu"
-    gpu_queue = get_str("COMPARE_QUEUE_GPU", "compare-gpu").strip() or "compare-gpu"
-    if not get_bool("ENABLE_GPU_QUEUE", default=False):
-        return cpu_queue
-
-    device_mode = get_str("COMPARE_EXECUTION_DEVICE", "auto").strip().lower()
-    if device_mode == "cpu":
-        return cpu_queue
-    if device_mode == "gpu":
-        return gpu_queue
-
-    try:
-        return gpu_queue if resolve_device(None) == "cuda" else cpu_queue
-    except Exception as exc:
-        logger.bind(class_name="CompareAPI", method_name="_select_queue").opt(
-            exception=exc
-        ).warning("Failed to auto-detect execution device; falling back to CPU queue")
-        return cpu_queue
+    return select_queue_for_job()
 
 
 @router.post(
@@ -108,15 +88,13 @@ async def create_compare_job(
     try:
         UUID(job_id)
     except ValueError as exc:
-        logger.bind(
-            class_name="CompareAPI", method_name="create_compare_job", job_id=job_id
-        ).warning("Invalid job_id format")
+        logger.bind(class_name="CompareAPI", method_name="create_compare_job", job_id=job_id).warning(
+            "Invalid job_id format"
+        )
         raise HTTPException(status_code=400, detail="job_id must be a valid UUID") from exc
 
     if metric not in {"lpips", "dists", "both"}:
-        raise HTTPException(
-            status_code=400, detail='metric must be one of: "lpips", "dists", "both"'
-        )
+        raise HTTPException(status_code=400, detail='metric must be one of: "lpips", "dists", "both"')
     metric_name = cast(JobMetricName, metric)
 
     normalized_value = normalize.strip().lower()
@@ -146,13 +124,15 @@ async def create_compare_job(
             )
         )
     except ValueError as exc:
-        logger.bind(
-            class_name="CompareAPI", method_name="create_compare_job", job_id=job_id
-        ).warning("Duplicate compare job id")
+        logger.bind(class_name="CompareAPI", method_name="create_compare_job", job_id=job_id).warning(
+            "Duplicate compare job id"
+        )
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     jobs_submitted_total.labels(metric=metric_name).inc()
+    _, gpu_queue = queue_names()
     queue_name = _select_queue()
+    force_device = "cuda" if queue_name == gpu_queue else "cpu"
     try:
         celery_app.signature(
             "app.tasks.compare_tasks.process_compare_job",
@@ -166,6 +146,8 @@ async def create_compare_job(
                 "img_b_name": img_b.filename or "img_b.png",
                 "img_a_b64": base64.b64encode(img_a_bytes).decode("ascii"),
                 "img_b_b64": base64.b64encode(img_b_bytes).decode("ascii"),
+                "force_device": force_device,
+                "fallback_from_gpu": False,
             },
             queue=queue_name,
             task_id=job_id,
@@ -194,6 +176,7 @@ async def create_compare_job(
         model=model,
         normalize=normalize_bool,
         queue=queue_name,
+        force_device=force_device,
     ).debug("Compare job queued")
 
     return {

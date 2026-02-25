@@ -37,6 +37,11 @@ def test_health(client: TestClient):
     assert isinstance(data["job_store"]["available"], bool)
     assert set(data["git"].keys()) == {"branch", "tag", "last_commit", "committer", "date"}
     assert all(isinstance(value, str) for value in data["git"].values())
+    assert set(data["gpu"].keys()) == {"enabled", "mode", "available", "fallback_to_cpu"}
+    assert isinstance(data["gpu"]["enabled"], bool)
+    assert data["gpu"]["mode"] in {"cpu", "gpu", "auto"}
+    assert isinstance(data["gpu"]["available"], bool)
+    assert isinstance(data["gpu"]["fallback_to_cpu"], bool)
 
 
 def test_legacy_compare_endpoint_removed(client: TestClient):
