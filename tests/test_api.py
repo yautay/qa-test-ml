@@ -29,7 +29,6 @@ def test_health(client: TestClient):
     assert r.status_code == 200
     data = r.json()
     assert data["status"] == "ok"
-    assert data["device"] in ("cpu", "cuda")
     assert "lpips" in data["metrics"]
     assert "dists" in data["metrics"]
     assert set(data["job_store"].keys()) == {"backend", "available"}

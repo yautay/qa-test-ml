@@ -2,7 +2,6 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core.build_info import get_git_metadata
-from app.core.device import resolve_device
 from app.core.execution import execution_device_mode, gpu_queue_enabled, gpu_worker_available
 from app.core.registry import registry
 
@@ -28,7 +27,6 @@ class HealthResponse(BaseModel):
         fallback_to_cpu: bool
 
     status: str
-    device: str
     metrics: list[str]
     job_store: JobStoreInfo
     git: GitInfo
@@ -39,7 +37,7 @@ class HealthResponse(BaseModel):
     "/health",
     response_model=HealthResponse,
     summary="Service health",
-    description="Returns service status, resolved device, available metrics, and git metadata.",
+    description="Returns service status, available metrics, and runtime metadata.",
 )
 def health(request: Request):
     store = getattr(request.app.state, "job_store", None)
@@ -55,7 +53,6 @@ def health(request: Request):
 
     return {
         "status": "ok",
-        "device": resolve_device(None),
         "metrics": registry.list(),
         "job_store": {"backend": backend, "available": store_available},
         "git": get_git_metadata().as_dict(),
