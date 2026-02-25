@@ -5,7 +5,7 @@ pillow==12.1.1
 lpips==0.1.4
 torch==2.10.0
 torchvision==0.25.0
-numpy==2.4.1
+numpy==2.2.6
 piq==0.8.0
 httpx==0.28.1
 loguru==0.7.3
