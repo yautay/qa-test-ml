@@ -1,8 +1,9 @@
 # Perceptual Metrics Service - Docker Compose
 #
 # Usage:
-#   - Development/CPU:  docker compose up --build
+#   - Development/CPU:  docker compose --profile cpu up --build
 #   - Production/GPU:   docker compose --profile gpu up --build
+#   - Both workers:     docker compose --profile cpu --profile gpu up --build
 #
 # Requirements:
 #   - requirements.txt (CPU-only) - default for dev/test
@@ -66,6 +67,8 @@ services:
       - redis
     mem_limit: 2g
     cpus: 2
+    profiles:
+      - cpu
 
   worker-gpu:
     image: nvidia/cuda:12.4.1-runtime-ubuntu22.04
