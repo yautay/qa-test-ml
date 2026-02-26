@@ -1,79 +1,186 @@
-# Perceptual Metrics Service / Serwis Metryk Percepcyjnych
+# Perceptual Metrics Service
 
-FastAPI service for comparing two images using perceptual similarity metrics (LPIPS), with optional difference heatmaps.
+FastAPI service for perceptual similarity metrics ( comparing two images usingLPIPS, DISTS), with optional difference heatmaps.
 
-Serwis FastAPI do porownywania dwoch obrazow przy uzyciu metryk percepcyjnych (LPIPS), z opcjonalnym generowaniem mapy roznic.
+## Architecture
 
-## English
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────────┐
+│   Client    │────▶│  FastAPI    │────▶│      Redis      │
+│             │     │    API      │     │ (Broker + Store)│
+└─────────────┘     └──────┬──────┘     └────────┬────────┘
+                           │                      │
+                           │              ┌───────▼───────┐
+                           │              │               │
+                    ┌──────▼──────┐       │    Celery      │
+                    │  /health    │       │   Workers      │
+                    │  /metrics   │       │  (CPU / GPU)   │
+                    │  /v1/*      │       │               │
+                    └─────────────┘       └───────────────┘
+```
 
-### What it does
+### Components
 
-- Accepts asynchronous image comparison jobs via `v1` endpoints
-- Computes LPIPS and/or DISTS scores, with optional LPIPS heatmap output
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| API | FastAPI | Accepts jobs, reads status/results, exposes `/metrics` |
+| Broker/Store | Redis | Task broker for Celery and shared job state storage |
+| Workers | Celery | Execute LPIPS/DISTS calculations and heatmap generation |
+| Monitoring | Prometheus + Grafana | Collects and visualizes runtime metrics |
 
-### Requirements
+### Supported Metrics
 
-- Python + pip
-- Packages from `requirements.txt` (includes `fastapi`, `uvicorn`, `torch`, `lpips`, `pillow`)
+- **LPIPS** (Learned Perceptual Image Patch Similarity) - Networks: `alex`, `vgg`, `squeeze`
+- **DISTS** (Deep Image Structure and Texture Similarity)
 
-### Install
+## How It Works
+
+1. Client calls `POST /v1/compare/jobs` with two images
+2. API validates payload and creates a `queued` record in Redis JobStore
+3. API enqueues Celery task to CPU or GPU queue based on `COMPARE_EXECUTION_DEVICE`
+4. Worker picks up task, updates status to `running`, computes metrics
+5. Worker stores final state (`done` or `error`) and optional LPIPS heatmap
+6. Client polls `GET /v1/compare/jobs/{id}` and gets consistent result from shared store
+
+### Why Celery + Redis?
+
+The previous implementation held job state in process memory. In multi-process mode, one process could not see jobs created in another process. Storing state in Redis ensures every API process reads the same source of truth.
+
+## Requirements
+
+- Python 3.12
+- WSL2 / Linux / macOS
+- virtualenv
+
+## Setup
+
+### 1. Create virtual environment
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+```
+
+### 2. Install dependencies
+
+```bash
+# runtime
 pip install -r requirements.txt
+
+# development
+pip install -r requirements-dev.txt
 ```
 
-### Tests
-
-```bash
-pip install -r requirements.txt -r requirements-dev.txt
-pytest
-```
-
-### Run
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-Configuration source priority for runtime settings:
-
-- system environment variables
-- `config.toml` in project root (`[env]` section)
-- hardcoded defaults in code
-
-How to set variables:
-
-- System env (highest priority), e.g. `export LOG_LEVEL=DEBUG`
-- `config.toml` in project root (`[env]` section), e.g. `LOG_LEVEL = "DEBUG"`
-- Defaults from application code (used only when neither env nor config file provides a value)
-
-To start with file-based config, copy and edit:
+### 3. Optional: File-based configuration
 
 ```bash
 cp config.toml.example config.toml
 ```
 
-Open Swagger UI:
+## Running the Application
 
-- `http://127.0.0.1:8080/docs`
-
-OpenAPI JSON:
-
-- `http://127.0.0.1:8080/openapi.json`
-- `http://127.0.0.1:8080/redoc`
-
-### API
-
-Health:
+### Development (local)
 
 ```bash
-curl http://127.0.0.1:8080/health
+uvicorn app.main:app --reload
 ```
 
-Create async comparison job (multipart/form-data):
+API available at: http://localhost:8080
+Swagger UI: http://localhost:8080/docs
+
+### Production (Docker Compose)
+
+PyTorch 2.10+ automatically detects CPU/GPU at runtime. Use profiles to select worker type:
+
+#### CPU workers (development/test)
 
 ```bash
-curl -sS -X POST "http://127.0.0.1:8080/v1/compare/jobs" \
+docker compose -f tools/runtime/docker-compose.yml --profile cpu up --build
+```
+
+#### GPU workers (production)
+
+Requires `nvidia-container-toolkit`:
+
+```bash
+docker compose -f tools/runtime/docker-compose.yml --profile gpu up --build
+```
+
+#### Both CPU and GPU workers
+
+```bash
+docker compose -f tools/runtime/docker-compose.yml --profile cpu --profile gpu up --build
+```
+
+### Monitoring Stack (optional)
+
+```bash
+docker compose -f tools/monitoring/docker-compose.yml up -d
+```
+
+| Service | URL |
+|---------|-----|
+| API | http://localhost:8080 |
+| Metrics | http://localhost:8080/metrics |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 (admin/admin) |
+
+## Configuration
+
+Configuration priority (highest to lowest):
+1. System environment variables
+2. `config.toml` (project root, `[env]` section)
+3. Hardcoded defaults in code
+
+### Main Runtime Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JOB_STORE_BACKEND` | `redis` | Job storage: `redis` or `memory` |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis connection |
+| `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery broker URL |
+| `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/0` | Celery result backend |
+| `COMPARE_QUEUE_CPU` | `compare-cpu` | CPU worker queue name |
+| `COMPARE_QUEUE_GPU` | `compare-gpu` | GPU worker queue name |
+| `ENABLE_GPU_QUEUE` | `false` | Enable GPU queue |
+| `COMPARE_EXECUTION_DEVICE` | `auto` | Device: `auto`, `cpu`, or `gpu` |
+| `API_DEBUG` | `true` | Enable detailed error responses |
+
+### Logging Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Console log level |
+| `LOG_API_ENABLED` | `false` | Enable API logging sink |
+| `LOG_API_URL` | - | Target endpoint for POST log events |
+| `LOG_API_LEVEL` | `ERROR` | API sink level threshold |
+| `LOG_API_TIMEOUT_MS` | `2000` | API sink timeout (ms) |
+| `LOG_API_TOKEN` | - | Bearer token for API auth (not logged) |
+| `LOG_SERVICE_NAME` | `perceptual-metrics-service` | Service name in log payload |
+
+### Git Metadata
+
+Override git metadata via environment (optional):
+
+- `APP_GIT_BRANCH`
+- `APP_GIT_TAG`
+- `APP_GIT_LAST_COMMIT`
+- `APP_GIT_COMMITTER`
+- `APP_GIT_COMMIT_DATE`
+
+## API Endpoints
+
+### Health Check
+
+```bash
+curl http://localhost:8080/health
+```
+
+### Create Comparison Job
+
+```bash
+curl -sS -X POST "http://localhost:8080/v1/compare/jobs" \
   -F "job_id=8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea" \
   -F "pair_id=pair_001" \
   -F "metric=both" \
@@ -83,151 +190,77 @@ curl -sS -X POST "http://127.0.0.1:8080/v1/compare/jobs" \
   -F "img_b=@tests/assets/test_1.png"
 ```
 
-Get async job status:
+### Get Job Status
 
 ```bash
-curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea"
+curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea"
 ```
 
-Get async job error details (only when status is `error`):
+### Get Job Error Details (if failed)
 
 ```bash
-curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/error"
+curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/error"
 ```
 
-List all async jobs:
+### List All Jobs
 
 ```bash
-curl -sS "http://127.0.0.1:8080/v1/compare/jobs"
+curl -sS "http://localhost:8080/v1/compare/jobs"
 ```
 
-Download heatmap PNG for completed job:
+### Download Heatmap (for completed LPIPS jobs)
 
 ```bash
-curl -sS "http://127.0.0.1:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/heatmap" -o heatmap.png
+curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/heatmap" -o heatmap.png
 ```
 
-### Notes
+## Metrics
 
-- `API_DEBUG=1` (default) returns a detailed JSON 500 response; set `API_DEBUG=0` to disable it.
-- Async jobs are distributed via Celery + Redis (`JOB_STORE_BACKEND=redis`).
-- Recommended runtime stack is in `tools/runtime/docker-compose.yml`.
-- Monitoring stack is in `tools/monitoring/docker-compose.yml`.
-- Architecture and runbook details are in `docs/architecture-celery-redis.md`.
-- Heatmap endpoint is available only for completed jobs with `metric=lpips` or `metric=both`.
-- Error details endpoint is available only for failed jobs (`status=error`), and detailed stacktrace remains in service logs.
+Prometheus metrics exposed at `/metrics`:
 
-Runtime settings logged on startup:
+| Metric | Description |
+|--------|-------------|
+| `pms_jobs_submitted_total{metric}` | Total jobs submitted |
+| `pms_jobs_started_total{metric}` | Total jobs started |
+| `pms_jobs_finished_total{metric}` | Total jobs finished |
+| `pms_jobs_failed_total{metric}` | Total jobs failed |
+| `pms_jobs_inflight` | Jobs currently processing |
+| `pms_job_duration_seconds{metric,status}` | Job duration histogram |
 
-- API/debug and runtime settings: `API_DEBUG`, `JOB_STORE_BACKEND`, `IMAGE_BASE_DIR`, `REDIS_URL`
-- Logging settings: `LOG_LEVEL`, `LOG_API_ENABLED`, `LOG_API_URL`, `LOG_API_LEVEL`, `LOG_API_TIMEOUT_MS`, `LOG_SERVICE_NAME`
-- Secret handling: `LOG_API_TOKEN` value is not printed, only `log_api_token_configured: true/false`
-- Git metadata section (`git`) is also logged with branch/tag/last commit details
+## Development
 
-### Logging (Loguru)
+### Run Tests
 
-The service uses `loguru` with two sinks:
+```bash
+pytest -q
+```
 
-- Console sink (always enabled)
-- API sink (optional, disabled by default)
+### Lint & Format
 
-Environment variables:
+```bash
+ruff check .
+black .
+```
 
-- `LOG_LEVEL` - console log level (default: `INFO`)
-- `LOG_API_ENABLED` - enable API sink (`true`/`false`, default: `false`)
-- `LOG_API_URL` - target endpoint for `POST` log events
-- `LOG_API_LEVEL` - API sink level threshold (default: `ERROR`)
-- `LOG_API_TIMEOUT_MS` - API sink timeout in milliseconds (default: `2000`)
-- `LOG_API_TOKEN` - optional bearer token for API sink auth
-- `LOG_SERVICE_NAME` - `service` field in log payload (default: `perceptual-metrics-service`)
+### Type Check
 
-Log context fields (console + API sink):
+```bash
+mypy .
+```
 
-- `timestamp`
-- `branch`
-- `file`
-- `class` (from logger `extra.class_name`, default: `null`)
-- `method` (from logger `extra.method_name`, fallback: function name)
+### Security Audit
 
-API sink payload shape:
+```bash
+pip-audit
+```
 
-- `timestamp`, `level`, `message`, `service`, `branch`, `file`, `class`, `method`, `module`, `function`, `line`, `exception`, `extra`
+### Full Check (before commit)
 
-Job lifecycle debug/error logs (`app/api/routes/compare.py`, `app/tasks/compare_tasks.py`):
+```bash
+make full-check
+```
 
-- `Compare job queued` (`DEBUG`) emitted on enqueue
-- `Compare task failed` (`ERROR`) emitted with traceback on worker failure
-- `LPIPS heatmap generation failed; marking job as error` (`CRITICAL`) emitted for heatmap failures
-
-Job log context fields (`extra`) include:
-
-- `job_id`, `pair_id`, `metric`, `model`, `normalize`
-- `img_a_name`, `img_b_name`
-- `img_a_path`, `img_b_path` (worker failure logs)
-- `timing_ms` (finished/failed logs)
-- `lpips`, `dists`, `has_heatmap` (finished log)
-
-### Git metadata and healthcheck
-
-`GET /health` now returns a nested `git` object:
-
-- `branch`
-- `tag`
-- `last_commit`
-- `committer`
-- `date`
-
-Metadata source priority:
-
-- Env override variables (if set):
-  - `APP_GIT_BRANCH`
-  - `APP_GIT_TAG`
-  - `APP_GIT_LAST_COMMIT`
-  - `APP_GIT_COMMITTER`
-  - `APP_GIT_COMMIT_DATE`
-- Git CLI (from repository state)
-- Fallback value: `unknown`
-
-### Metrics
-
-- `lpips`: implemented (scalar + heatmap). Nets: `vgg`, `alex`, `squeeze`.
-- `dists`: implemented for scalar scoring.
-
-## Business Value / Wartość Biznesowa
-
-### Supported Models
-
-This API provides image similarity assessment using two perceptual metrics:
-
-#### LPIPS (Learned Perceptual Image Patch Similarity)
-- **Networks**: `alex`, `vgg`, `squeeze`
-- **How it works**: Uses pre-trained convolutional neural networks (AlexNet, VGG, SqueezeNet) as feature extractors to measure perceptual similarity between images
-- **Best for**: General-purpose perceptual comparison, GAN evaluation, image generation quality assessment
-
-#### DISTS (Deep Image Structure and Texture Similarity)
-- **Model**: DISTS (CNN-based)
-- **How it works**: Combines deep features with structural and textural components to evaluate image quality
-- **Best for**: More nuanced image quality assessment capturing both structure and texture differences
-
-### Business Benefits
-
-| Benefit | Description |
-|---------|-------------|
-| **Automated Quality Control** | Replace manual image comparison with objective, reproducible metrics |
-| **Faster QA Processes** | Instantly compare thousands of images without human intervention |
-| **Consistent Standards** | Ensure consistent quality standards across all visual content |
-| **Cost Reduction** | Reduce time and resources spent on manual review |
-| **Data-Driven Decisions** | Quantify visual effects, support metric-based decisions |
-
-### Use Cases
-
-- **Computer Vision Model Evaluation**: Compare GAN outputs, super-resolution results, or image restoration quality
-- **A/B Testing**: Compare different image processing pipelines or rendering engines
-- **Visual Regression Testing**: Detect unintended visual changes in UI/frontend updates
-- **Content Moderation**: Identify visual similarities between images
-- **Quality Assurance**: Verify image compression, format conversion, or watermarking effects
-
-### Choosing the Right Model
+## Choosing the Right Model
 
 | Model | Speed | Accuracy | Recommended Use |
 |-------|-------|----------|-----------------|
@@ -236,45 +269,15 @@ This API provides image similarity assessment using two perceptual metrics:
 | `squeeze` | Fast | Good | Balanced performance |
 | `dists` | Slower | Excellent | Comprehensive quality assessment |
 
----
+## Business Use Cases
 
-### Obsługiwane modele
+- **Computer Vision Model Evaluation**: Compare GAN outputs, super-resolution results
+- **A/B Testing**: Compare different image processing pipelines
+- **Visual Regression Testing**: Detect unintended visual changes
+- **Quality Assurance**: Verify compression, format conversion, watermarking effects
 
-Ten API umożliwia ocenę podobieństwa obrazów przy użyciu dwóch metryk percepcyjnych:
+## Documentation
 
-#### LPIPS (Learned Perceptual Image Patch Similarity)
-- **Sieci**: `alex`, `vgg`, `squeeze`
-- **Jak działa**: Wykorzystuje wstępnie wytrenowane splotowe sieci neuronowe (AlexNet, VGG, SqueezeNet) jako ekstraktory cech do pomiaru podobieństwa percepcyjnego między obrazami
-- **Najlepsze do**: Ogólnego porównywania percepcyjnego, ewaluacji GAN, oceny jakości generowanych obrazów
-
-#### DISTS (Deep Image Structure and Texture Similarity)
-- **Model**: DISTS (oparty na CNN)
-- **Jak działa**: Łączy cechy głębokie ze składowymi strukturalnymi i teksturalnymi w celu oceny jakości obrazu
-- **Najlepsze do**: Bardziej szczegółowej oceny jakości obrazu, uwzględniającej różnice w strukturze i teksturze
-
-### Korzyści biznesowe
-
-| Korzyść | Opis |
-|---------|------|
-| **Automatyczna kontrola jakości** | Zastąpienie ręcznego porównywania obrazów obiektywnymi, powtarzalnymi metrykami |
-| **Szybsze procesy QA** | Natychmiastowe porównywanie tysięcy obrazów bez interwencji człowieka |
-| **Spójne standardy** | Zapewnienie jednolitych standardów jakości dla wszystkich treści wizualnych |
-| **Redukcja kosztów** | Zmniejszenie czasu i zasobów poświęcanych na ręczne przeglądy |
-| **Decyzje oparte na danych** | Kwantyfikacja efektów wizualnych, wspieranie decyzji opartych na metrykach |
-
-### Przypadki użycia
-
-- **Ewaluacja modeli Computer Vision**: Porównywanie wyników GAN, super-rozdzielczości lub jakości przywracania obrazów
-- **Testy A/B**: Porównywanie różnych potoków przetwarzania obrazów lub silników renderowania
-- **Testy regresji wizualnej**: Wykrywanie niezamierzonych zmian wizualnych w aktualizacjach UI/frontend
-- **Moderacja treści**: Identyfikowanie podobieństw wizualnych między obrazami
-- **Zapewnienie jakości**: Weryfikacja efektów kompresji, konwersji formatów lub znaków wodnych
-
-### Wybór odpowiedniego modelu
-
-| Model | Szybkość | Dokładność | Zalecane użycie |
-|-------|----------|------------|-----------------|
-| `alex` | Najszybsza | Dobra | Szybkie porównania, przetwarzanie dużych wolumenów |
-| `vgg` | Średnia | Najlepsza | Precyzyjne dopasowanie percepcyjne, badania |
-| `squeeze` | Szybka | Dobra | Zrównoważona wydajność |
-| `dists` | Wolniejsza | Wyborna | Kompleksowa ocena jakości |
+- Architecture details: `docs/architecture-celery-redis.md`
+- Runtime compose config: `tools/runtime/docker-compose.yml`
+- Monitoring compose config: `tools/monitoring/docker-compose.yml`

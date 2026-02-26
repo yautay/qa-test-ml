@@ -1,16 +1,15 @@
 # Perceptual Metrics Service - Docker Compose
 #
 # Usage:
-#   - Development/CPU:  docker compose --profile cpu up --build
-#   - Production/GPU:   docker compose --profile gpu up --build
-#   - Both workers:     docker compose --profile cpu --profile gpu up --build
+#   - CPU workers:     docker compose --profile cpu up --build
+#   - GPU workers:     docker compose --profile gpu up --build
+#   - Both workers:    docker compose --profile cpu --profile gpu up --build
 #
 # Requirements:
-#   - requirements.txt (CPU-only) - default for dev/test
-#   - requirements.prod.txt (GPU) - for production with NVIDIA GPU
+#   - Python 3.12
+#   - nvidia-container-toolkit for GPU support
 #
-# Note: Requires nvidia-container-toolkit for GPU support
-#       https://github.com/NVIDIA/nvidia-docker
+# Note: PyTorch 2.10+ auto-detects CPU/GPU at runtime
 
 services:
   redis:
@@ -86,7 +85,7 @@ services:
       mkdir -p /root/.cache/torch/hub/checkpoints &&
       curl -o /root/.cache/torch/hub/checkpoints/vgg16-397923af.pth https://download.pytorch.org/models/vgg16-397923af.pth &&
       curl -o /root/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth https://download.pytorch.org/models/alexnet-owt-7be5be79.pth &&
-      pip install --no-cache-dir -r requirements.prod.txt &&
+      pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker -Q ${COMPARE_QUEUE_GPU:-compare-gpu} --concurrency=${CELERY_GPU_CONCURRENCY:-1} --loglevel=${CELERY_LOG_LEVEL:-INFO}"
     depends_on:
       - redis
