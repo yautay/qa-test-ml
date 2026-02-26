@@ -25,9 +25,7 @@ def resolve_input_path(path: str) -> str:
     return resolved
 
 
-def resize_pair_to_max_side(
-    ref: Image.Image, tst: Image.Image, max_side: int
-) -> tuple[Image.Image, Image.Image]:
+def resize_pair_to_max_side(ref: Image.Image, tst: Image.Image, max_side: int) -> tuple[Image.Image, Image.Image]:
     w1, h1 = ref.size
     w2, h2 = tst.size
     longest = max(w1, h1, w2, h2)
@@ -52,9 +50,7 @@ def match_size(ref: Image.Image, tst: Image.Image) -> tuple[Image.Image, Image.I
     return ref, tst.resize(ref.size, resample=_RESAMPLE_BILINEAR)
 
 
-def pad_pair_to_min_side(
-    ref: Image.Image, tst: Image.Image, min_side: int
-) -> tuple[Image.Image, Image.Image]:
+def pad_pair_to_min_side(ref: Image.Image, tst: Image.Image, min_side: int) -> tuple[Image.Image, Image.Image]:
     if min_side < 1:
         raise ValueError("min_side must be >= 1")
 

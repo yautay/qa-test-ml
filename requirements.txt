@@ -9,7 +9,7 @@ numpy==2.2.6
 piq==0.8.0
 httpx==0.28.1
 loguru==0.7.3
-python-multipart==0.0.20
+python-multipart==0.0.22
 celery==5.5.3
 redis==5.3.1
 prometheus-client==0.23.1
