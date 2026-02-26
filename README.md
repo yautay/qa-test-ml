@@ -159,16 +159,6 @@ Configuration priority (highest to lowest):
 | `LOG_API_TOKEN` | - | Bearer token for API auth (not logged) |
 | `LOG_SERVICE_NAME` | `perceptual-metrics-service` | Service name in log payload |
 
-### Git Metadata
-
-Override git metadata via environment (optional):
-
-- `APP_GIT_BRANCH`
-- `APP_GIT_TAG`
-- `APP_GIT_LAST_COMMIT`
-- `APP_GIT_COMMITTER`
-- `APP_GIT_COMMIT_DATE`
-
 ## API Endpoints
 
 ### Health Check

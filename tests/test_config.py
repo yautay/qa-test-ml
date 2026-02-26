@@ -108,19 +108,3 @@ REDIS_URL = "redis://127.0.0.1:6379/0"
     job_store = app.state.job_store
 
     assert job_store is not None
-
-
-def test_git_metadata_uses_env_overrides(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("APP_GIT_BRANCH", "release/1.2")
-    monkeypatch.setenv("APP_GIT_TAG", "v1.2.3")
-    monkeypatch.setenv("APP_GIT_LAST_COMMIT", "abc123")
-    monkeypatch.setenv("APP_GIT_COMMITTER", "Jane Doe")
-    monkeypatch.setenv("APP_GIT_COMMIT_DATE", "2026-02-24T10:00:00+00:00")
-
-    metadata = build_info.get_git_metadata()
-
-    assert metadata.branch == "release/1.2"
-    assert metadata.tag == "v1.2.3"
-    assert metadata.last_commit == "abc123"
-    assert metadata.committer == "Jane Doe"
-    assert metadata.date == "2026-02-24T10:00:00+00:00"

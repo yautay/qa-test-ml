@@ -7,7 +7,7 @@ from loguru import logger
 
 from app.core.celery_app import celery_app
 from app.core.execution import queue_names, select_queue_for_job
-from app.core.job_store import JobState, get_job_store, now_ms
+from app.core.job_store import JobState, now_ms
 from app.core.metrics import jobs_submitted_total
 from app.schemas.compare import (
     ErrorResponse,

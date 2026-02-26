@@ -1,5 +1,6 @@
 -r requirements.txt
 pytest==8.4.2
+pytest-cov
 pip-audit
 pipdeptree
 pip-check-reqs

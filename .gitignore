@@ -21,7 +21,9 @@ dist/
 # Test / coverage
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+.coverage
 .mypy_cache/
 .ruff_cache/
 

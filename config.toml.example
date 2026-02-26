@@ -32,9 +32,4 @@ LOG_API_TIMEOUT_MS = 2000
 LOG_API_TOKEN = ""
 LOG_SERVICE_NAME = "perceptual-metrics-service"
 
-# Optional runtime git metadata overrides
-APP_GIT_BRANCH = ""
-APP_GIT_TAG = ""
-APP_GIT_LAST_COMMIT = ""
-APP_GIT_COMMITTER = ""
-APP_GIT_COMMIT_DATE = ""
+# Git metadata is now read directly from git CLI

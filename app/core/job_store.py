@@ -6,16 +6,19 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    pass
 
 try:
     import redis as redis_lib
 
     _HAS_REDIS = True
 except ImportError:  # pragma: no cover
-    redis_lib = None
+    redis_lib = None  # type: ignore[assignment]
     _HAS_REDIS = False
 
 from app.core.config import get_int, get_str
@@ -71,9 +74,7 @@ class JobState:
             lpips=float(data["lpips"]) if data.get("lpips") is not None else None,
             dists=float(data["dists"]) if data.get("dists") is not None else None,
             timing_ms=int(data["timing_ms"]) if data.get("timing_ms") is not None else None,
-            error_message=(
-                str(data["error_message"]) if data.get("error_message") is not None else None
-            ),
+            error_message=(str(data["error_message"]) if data.get("error_message") is not None else None),
             has_heatmap=bool(data.get("has_heatmap", False)),
             created_at_ms=int(data.get("created_at_ms", 0)),
         )
@@ -236,15 +237,16 @@ class RedisJobStore(JobStore):
         self.update_job(job_id, has_heatmap=True)
 
     def get_heatmap(self, job_id: str) -> bytes | None:
-        return self._redis.get(self._heatmap_key(job_id))
+        result = self._redis.get(self._heatmap_key(job_id))
+        return cast(bytes | None, result)
 
     def is_available(self) -> bool:
         try:
             return bool(self._redis.ping())
         except Exception as exc:
-            logger.bind(class_name="RedisJobStore", method_name="is_available").opt(
-                exception=exc
-            ).warning("Redis ping failed")
+            logger.bind(class_name="RedisJobStore", method_name="is_available").opt(exception=exc).warning(
+                "Redis ping failed"
+            )
             return False
 
 

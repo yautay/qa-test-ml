@@ -73,9 +73,7 @@ class ApiLogSink:
                 self._error_count += 1
                 should_report = self._error_count in {1, 5, 10} or self._error_count % 50 == 0
             if should_report:
-                sys.stderr.write(
-                    f"[loguru] API sink post failed ({self._error_count}) url={self.url}\n"
-                )
+                sys.stderr.write(f"[loguru] API sink post failed ({self._error_count}) url={self.url}\n")
 
 
 def configure_logging() -> None:
@@ -88,7 +86,7 @@ def configure_logging() -> None:
         extra.setdefault("class_name", None)
         extra.setdefault("method_name", record["function"])
 
-    logger.configure(patcher=_patch_record)
+    logger.configure(patcher=_patch_record)  # type: ignore[arg-type]
 
     log_level = get_str("LOG_LEVEL", "INFO")
     logger.add(

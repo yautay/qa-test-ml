@@ -4,6 +4,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -137,11 +138,11 @@ def _install_heatmap_failing_metrics(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(tasks_module.registry, "get", _get)
 
 
-def _wait_terminal(client: TestClient, job_id: str) -> dict:
+def _wait_terminal(client: TestClient, job_id: str) -> dict[str, Any]:
     for _ in range(80):
         r = client.get(f"/v1/compare/jobs/{job_id}")
         assert r.status_code == 200
-        body = r.json()
+        body: dict[str, Any] = r.json()
         if body["status"] in {"done", "error"}:
             return body
         time.sleep(0.05)
@@ -227,9 +228,7 @@ def test_openapi_contains_jobs_paths(client: TestClient):
     assert "/v1/compare/jobs/{job_id}/error" in paths
 
 
-def test_error_url_and_error_endpoint_for_failed_job(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
-):
+def test_error_url_and_error_endpoint_for_failed_job(monkeypatch: pytest.MonkeyPatch, client: TestClient):
     _install_failing_metrics(monkeypatch)
     job_id = str(uuid.uuid4())
 

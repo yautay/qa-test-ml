@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from loguru import logger
 
 from app.core.celery_app import celery_app
