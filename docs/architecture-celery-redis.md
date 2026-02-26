@@ -1,8 +1,4 @@
-# Celery + Redis Architecture (Hard Cut)
-
-## Purpose
-
-This document describes the production architecture after migrating async compare jobs from in-memory state to Celery + Redis.
+# Celery + Redis Architecture
 
 ## Components
 
@@ -47,30 +43,8 @@ The previous implementation held job state in process memory. In multi-process m
 - `pms_jobs_inflight`
 - `pms_job_duration_seconds{metric,status}`
 
-## DevOps Runbook
-
-1. Start runtime stack (`tools/runtime/docker-compose.yml`).
-2. Start monitoring stack (`tools/monitoring/docker-compose.yml`).
-3. Verify:
-   - API: `http://localhost:8080/health`
-   - Metrics: `http://localhost:8080/metrics`
-   - Prometheus: `http://localhost:9090`
-   - Grafana: `http://localhost:3000`
-4. Scale worker services as needed (CPU and GPU independently).
-
 ## Developer Notes
 
 - `CELERY_TASK_ALWAYS_EAGER=true` can be used in tests/local unit flow.
 - For integration tests, use real Redis and run worker service.
 - `JOB_STORE_BACKEND=memory` remains available for local debugging only.
-
-## Tester Notes
-
-Suggested scenarios:
-
-- Submit `metric=both`, verify status transitions and score fields.
-- Submit malformed image pair, verify `status=error` and `error_message`.
-- Validate heatmap endpoint:
-  - `200` for completed LPIPS jobs with heatmap.
-  - `404` for missing/failed/non-LPIPS jobs.
-- Run parallel submissions and verify stable behavior with multiple API workers.
