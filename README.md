@@ -2,6 +2,12 @@
 
 FastAPI service for perceptual similarity metrics ( comparing two images usingLPIPS, DISTS), with optional difference heatmaps.
 
+## API Documentation
+
+Interactive API documentation (Swagger UI): http://localhost:8080/docs  
+ReDoc: http://localhost:8080/redoc  
+OpenAPI Schema (JSON): http://localhost:8080/openapi.json
+
 ## Architecture
 
 ```
@@ -88,6 +94,8 @@ uvicorn app.main:app --reload
 
 API available at: http://localhost:8080
 Swagger UI: http://localhost:8080/docs
+ReDoc: http://localhost:8080/redoc
+OpenAPI Schema: http://localhost:8080/openapi.json
 
 ### Production (Docker Compose)
 
@@ -161,48 +169,7 @@ Configuration priority (highest to lowest):
 
 ## API Endpoints
 
-### Health Check
-
-```bash
-curl http://localhost:8080/health
-```
-
-### Create Comparison Job
-
-```bash
-curl -sS -X POST "http://localhost:8080/v1/compare/jobs" \
-  -F "job_id=8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea" \
-  -F "pair_id=pair_001" \
-  -F "metric=both" \
-  -F "model=alex" \
-  -F "normalize=true" \
-  -F "img_a=@tests/assets/ref_1.png" \
-  -F "img_b=@tests/assets/test_1.png"
-```
-
-### Get Job Status
-
-```bash
-curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea"
-```
-
-### Get Job Error Details (if failed)
-
-```bash
-curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/error"
-```
-
-### List All Jobs
-
-```bash
-curl -sS "http://localhost:8080/v1/compare/jobs"
-```
-
-### Download Heatmap (for completed LPIPS jobs)
-
-```bash
-curl -sS "http://localhost:8080/v1/compare/jobs/8ebf6dad-bf45-4f7d-a267-4bcf7a7d66ea/heatmap" -o heatmap.png
-```
+Full API reference with request/response examples available via [Swagger UI](http://localhost:8080/docs).
 
 ## Metrics
 
