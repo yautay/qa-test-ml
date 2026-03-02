@@ -41,7 +41,11 @@ _GPU_ERROR_TOKENS = (
 
 def _store_temp_image(content: bytes, original_name: str) -> str:
     suffix = os.path.splitext(original_name)[1] or ".png"
-    base_dir = os.path.realpath(os.path.abspath(get_str("IMAGE_BASE_DIR", ".")))
+    configured_tmp_dir = get_str("COMPARE_TMP_DIR", "").strip()
+    base_dir = tempfile.gettempdir()
+    if configured_tmp_dir:
+        base_dir = os.path.realpath(os.path.abspath(configured_tmp_dir))
+    os.makedirs(base_dir, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix="compare_job_", suffix=suffix, dir=base_dir)
     with os.fdopen(fd, "wb") as f:
         f.write(content)

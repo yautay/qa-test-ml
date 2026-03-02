@@ -1,14 +1,21 @@
 import base64
+import hashlib
+import io
 from typing import cast
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 from loguru import logger
+from PIL import Image, UnidentifiedImageError
+from PIL.Image import DecompressionBombError
 
 from app.core.celery_app import celery_app
+from app.core.config import get_bool, get_int, get_str
 from app.core.execution import queue_names, select_queue_for_job
+from app.core.hmac_auth import verify_hmac_request
 from app.core.job_store import JobState, now_ms
-from app.core.metrics import jobs_submitted_total
+from app.core.metrics import jobs_submitted_total, rejected_requests_total
+from app.core.rate_limit import rate_limiter
 from app.schemas.compare import (
     ErrorResponse,
     JobAcceptedResponse,
@@ -21,6 +28,140 @@ from app.schemas.compare import (
 router = APIRouter(prefix="", tags=["compare"])
 IMG_A_FILE = File(..., description="First image file")
 IMG_B_FILE = File(..., description="Second image file")
+
+
+def _reject(request: Request, *, endpoint: str, status_code: int, detail: str, reason: str) -> None:
+    rejected_requests_total.labels(endpoint=endpoint, reason=reason, status_code=str(status_code)).inc()
+    logger.bind(
+        class_name="CompareAPI",
+        endpoint=endpoint,
+        reason=reason,
+        status_code=status_code,
+        path=request.url.path,
+        method=request.method,
+    ).warning("Request rejected: {}", detail)
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _client_key(request: Request) -> str:
+    client = request.client
+    if client is None:
+        return "unknown"
+    return client.host or "unknown"
+
+
+def _rate_limit_request(request: Request, *, endpoint: str, bucket: str) -> None:
+    if not get_bool("COMPARE_RATE_LIMIT_ENABLED", default=False):
+        return
+
+    if bucket == "create":
+        limit = get_int("COMPARE_RATE_LIMIT_CREATE_LIMIT", 60)
+        window_sec = get_int("COMPARE_RATE_LIMIT_CREATE_WINDOW_SEC", 60)
+    else:
+        limit = get_int("COMPARE_RATE_LIMIT_READ_LIMIT", 240)
+        window_sec = get_int("COMPARE_RATE_LIMIT_READ_WINDOW_SEC", 60)
+
+    key = f"{bucket}:{_client_key(request)}"
+    if not rate_limiter.allow(key, limit=limit, window_sec=window_sec):
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=429,
+            detail="Rate limit exceeded. Please retry later.",
+            reason="rate_limited",
+        )
+
+
+def _allowed_image_formats() -> set[str]:
+    raw = get_str("COMPARE_ALLOWED_IMAGE_FORMATS", "png,jpeg,webp")
+    allowed = {item.strip().upper() for item in raw.split(",") if item.strip()}
+    if not allowed:
+        return {"PNG", "JPEG", "WEBP"}
+    return allowed
+
+
+def _validate_image_bytes(request: Request, *, endpoint: str, content: bytes, field_name: str) -> None:
+    if not content:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=400,
+            detail=f"{field_name} must not be empty",
+            reason="empty_upload",
+        )
+
+    max_file_bytes = get_int("COMPARE_MAX_FILE_SIZE_BYTES", 10 * 1024 * 1024)
+    if max_file_bytes > 0 and len(content) > max_file_bytes:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=413,
+            detail=f"{field_name} exceeds maximum allowed size",
+            reason="file_too_large",
+        )
+
+    max_side = get_int("COMPARE_MAX_IMAGE_SIDE", 8192)
+    max_pixels = get_int("COMPARE_MAX_IMAGE_PIXELS", 40_000_000)
+    allowed_formats = _allowed_image_formats()
+    image_format = ""
+    width = 0
+    height = 0
+
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image_format = (image.format or "").upper()
+            width, height = image.size
+    except DecompressionBombError:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=413,
+            detail=f"{field_name} image dimensions are too large",
+            reason="image_too_large",
+        )
+    except UnidentifiedImageError:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=415,
+            detail=f"{field_name} is not a supported image file",
+            reason="unsupported_media_type",
+        )
+    except OSError:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=400,
+            detail=f"{field_name} is not a valid image",
+            reason="invalid_image",
+        )
+
+    if image_format not in allowed_formats:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=415,
+            detail=f"{field_name} has unsupported format: {image_format or 'unknown'}",
+            reason="unsupported_media_type",
+        )
+
+    if max_side > 0 and (width > max_side or height > max_side):
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=413,
+            detail=f"{field_name} exceeds max image side",
+            reason="image_too_large",
+        )
+
+    if max_pixels > 0 and width * height > max_pixels:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=413,
+            detail=f"{field_name} exceeds max image pixel count",
+            reason="image_too_large",
+        )
 
 
 def _job_to_status_response(job: JobState, request: Request) -> JobStatusResponse:
@@ -72,6 +213,9 @@ def _select_queue() -> str:
         202: {"description": "Job accepted and queued"},
         400: {"model": ErrorResponse, "description": "Invalid input"},
         409: {"model": ErrorResponse, "description": "Duplicate job_id"},
+        413: {"model": ErrorResponse, "description": "Payload/image too large"},
+        415: {"model": ErrorResponse, "description": "Unsupported media type"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
 )
@@ -85,6 +229,25 @@ async def create_compare_job(
     img_a: UploadFile = IMG_A_FILE,
     img_b: UploadFile = IMG_B_FILE,
 ):
+    endpoint = "create_compare_job"
+    _rate_limit_request(request, endpoint=endpoint, bucket="create")
+
+    max_total_bytes = get_int("COMPARE_MAX_TOTAL_UPLOAD_BYTES", 20 * 1024 * 1024)
+    content_length_header = request.headers.get("content-length", "").strip()
+    if max_total_bytes > 0 and content_length_header:
+        try:
+            content_length = int(content_length_header)
+        except ValueError:
+            content_length = -1
+        if content_length > max_total_bytes:
+            _reject(
+                request,
+                endpoint=endpoint,
+                status_code=413,
+                detail="Request payload exceeds maximum allowed size",
+                reason="payload_too_large",
+            )
+
     try:
         UUID(job_id)
     except ValueError as exc:
@@ -104,8 +267,30 @@ async def create_compare_job(
 
     img_a_bytes = await img_a.read()
     img_b_bytes = await img_b.read()
-    if not img_a_bytes or not img_b_bytes:
-        raise HTTPException(status_code=400, detail="img_a and img_b must not be empty")
+    if max_total_bytes > 0 and (len(img_a_bytes) + len(img_b_bytes)) > max_total_bytes:
+        _reject(
+            request,
+            endpoint=endpoint,
+            status_code=413,
+            detail="Combined upload size exceeds maximum allowed limit",
+            reason="payload_too_large",
+        )
+
+    _validate_image_bytes(request, endpoint=endpoint, content=img_a_bytes, field_name="img_a")
+    _validate_image_bytes(request, endpoint=endpoint, content=img_b_bytes, field_name="img_b")
+
+    verify_hmac_request(
+        request,
+        fields={
+            "job_id": job_id,
+            "pair_id": pair_id,
+            "metric": metric_name,
+            "model": model,
+            "normalize": normalized_value,
+            "img_a_sha256": hashlib.sha256(img_a_bytes).hexdigest(),
+            "img_b_sha256": hashlib.sha256(img_b_bytes).hexdigest(),
+        },
+    )
 
     store = _get_job_store(request)
     created_at_ms = now_ms()
@@ -194,10 +379,13 @@ async def create_compare_job(
     responses={
         200: {"description": "Job status"},
         404: {"model": ErrorResponse, "description": "Job not found"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
 )
 async def get_compare_job_status(request: Request, job_id: str):
+    _rate_limit_request(request, endpoint="get_compare_job_status", bucket="read")
+    verify_hmac_request(request)
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:
@@ -212,10 +400,13 @@ async def get_compare_job_status(request: Request, job_id: str):
     description="Returns statuses of all async comparison jobs stored in shared job store.",
     responses={
         200: {"description": "List of job statuses"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
 )
 async def list_compare_jobs(request: Request):
+    _rate_limit_request(request, endpoint="list_compare_jobs", bucket="read")
+    verify_hmac_request(request)
     store = _get_job_store(request)
     jobs = store.list_jobs()
     return {"jobs": [_job_to_status_response(job, request) for job in jobs]}
@@ -232,10 +423,13 @@ async def list_compare_jobs(request: Request):
             "content": {"image/png": {}},
         },
         404: {"model": ErrorResponse, "description": "Job not found or heatmap unavailable"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
 )
 async def get_compare_job_heatmap(request: Request, job_id: str):
+    _rate_limit_request(request, endpoint="get_compare_job_heatmap", bucket="read")
+    verify_hmac_request(request)
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:
@@ -258,10 +452,13 @@ async def get_compare_job_heatmap(request: Request, job_id: str):
         200: {"description": "Job error details"},
         404: {"model": ErrorResponse, "description": "Job not found"},
         409: {"model": ErrorResponse, "description": "Job is not in error state"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
 )
 async def get_compare_job_error(request: Request, job_id: str):
+    _rate_limit_request(request, endpoint="get_compare_job_error", bucket="read")
+    verify_hmac_request(request)
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:

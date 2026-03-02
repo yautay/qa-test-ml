@@ -29,6 +29,10 @@ class _DummyMessage:
 def test_api_log_sink_posts_expected_payload(monkeypatch):
     posted: dict[str, object] = {}
 
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
     class DummyClient:
         def __init__(self, timeout: float):
             self.timeout = timeout
@@ -43,6 +47,7 @@ def test_api_log_sink_posts_expected_payload(monkeypatch):
             posted["url"] = url
             posted["json"] = json
             posted["headers"] = headers
+            return DummyResponse()
 
     monkeypatch.setattr("app.core.logging.httpx.Client", DummyClient)
 
@@ -78,6 +83,10 @@ def test_api_log_sink_posts_expected_payload(monkeypatch):
 
 
 def test_api_log_sink_swallows_post_errors(monkeypatch):
+    class DummyResponse:
+        def raise_for_status(self):
+            raise TimeoutError("network timeout")
+
     class DummyClient:
         def __init__(self, timeout: float):
             self.timeout = timeout
@@ -89,7 +98,7 @@ def test_api_log_sink_swallows_post_errors(monkeypatch):
             return False
 
         def post(self, url: str, json: dict[str, object], headers: dict[str, str]):
-            raise TimeoutError("network timeout")
+            return DummyResponse()
 
     monkeypatch.setattr("app.core.logging.httpx.Client", DummyClient)
 

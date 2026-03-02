@@ -8,6 +8,7 @@ from app.api.routes.compare import router as compare_router
 from app.api.routes.health import router as health_router
 from app.core.build_info import get_git_metadata
 from app.core.config import get_bool, get_int, get_str
+from app.core.hmac_auth import validate_hmac_settings
 from app.core.job_store import get_job_store
 from app.core.logging import configure_logging
 
@@ -19,6 +20,7 @@ def _read_runtime_settings() -> str:
 
 def create_app() -> FastAPI:
     configure_logging()
+    validate_hmac_settings()
     app = FastAPI(
         title="Perceptual Metrics Service",
         version="1.0.0",
@@ -52,6 +54,11 @@ def create_app() -> FastAPI:
             "log_api_timeout_ms": get_int("LOG_API_TIMEOUT_MS", 2000),
             "log_service_name": get_str("LOG_SERVICE_NAME", "perceptual-metrics-service"),
             "log_api_token_configured": bool(get_str("LOG_API_TOKEN", "").strip()),
+            "hmac_enabled": get_bool("HMAC_ENABLED", default=False),
+            "hmac_secret_configured": bool(get_str("HMAC_SECRET", "").strip()),
+            "hmac_allowed_skew_sec": get_int("HMAC_ALLOWED_SKEW_SEC", 300),
+            "hmac_require_nonce": get_bool("HMAC_REQUIRE_NONCE", default=True),
+            "hmac_nonce_ttl_sec": get_int("HMAC_NONCE_TTL_SEC", 300),
             "git": get_git_metadata().as_dict(),
         }
         logger.info("Application startup settings: {}", settings)

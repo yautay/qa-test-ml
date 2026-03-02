@@ -65,7 +65,8 @@ class ApiLogSink:
 
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                client.post(self.url, json=payload, headers=headers)
+                response = client.post(self.url, json=payload, headers=headers)
+                response.raise_for_status()
             with self._lock:
                 self._error_count = 0
         except Exception:

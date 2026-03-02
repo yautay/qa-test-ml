@@ -87,7 +87,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max(redis_up)",
+          "expr": "min(redis_up)",
           "legendFormat": "",
           "range": true,
           "refId": "A"
@@ -383,7 +383,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * sum(rate(redis_keyspace_hits_total[5m])) / clamp_min(sum(rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m])), 0.000001)",
+          "expr": "100 * sum(rate(redis_keyspace_hits_total[5m])) / clamp_min(sum(rate(redis_keyspace_hits_total[5m])) + sum(rate(redis_keyspace_misses_total[5m])), 0.000001)",
           "legendFormat": "hit ratio",
           "range": true,
           "refId": "A"

@@ -17,6 +17,7 @@ dist/
 
 # Logs
 *.log
+compare_job_*.png
 
 # Test / coverage
 .pytest_cache/
