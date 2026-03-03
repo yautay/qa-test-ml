@@ -160,6 +160,52 @@ def _asset_bytes(filename: str) -> bytes:
     return path.read_bytes()
 
 
+def test_store_temp_image_defaults_to_base_local_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    import app.tasks.compare_tasks as tasks_module
+
+    monkeypatch.setenv("IMAGE_BASE_DIR", str(tmp_path))
+    monkeypatch.delenv("COMPARE_TMP_DIR", raising=False)
+    app_config._clear_config_cache()
+
+    out = tasks_module._store_temp_image(b"x", "sample.png")
+    out_path = Path(out)
+    try:
+        assert out_path.parent == (tmp_path / ".compare_tmp").resolve()
+        assert out_path.read_bytes() == b"x"
+    finally:
+        if out_path.exists():
+            out_path.unlink()
+
+
+def test_store_temp_image_uses_relative_tmp_dir_under_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    import app.tasks.compare_tasks as tasks_module
+
+    monkeypatch.setenv("IMAGE_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("COMPARE_TMP_DIR", "work/compare")
+    app_config._clear_config_cache()
+
+    out = tasks_module._store_temp_image(b"y", "sample.png")
+    out_path = Path(out)
+    try:
+        assert out_path.parent == (tmp_path / "work" / "compare").resolve()
+        assert out_path.read_bytes() == b"y"
+    finally:
+        if out_path.exists():
+            out_path.unlink()
+
+
+def test_store_temp_image_rejects_tmp_dir_outside_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    import app.tasks.compare_tasks as tasks_module
+
+    outside = (tmp_path.parent / "outside-compare").resolve()
+    monkeypatch.setenv("IMAGE_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("COMPARE_TMP_DIR", str(outside))
+    app_config._clear_config_cache()
+
+    with pytest.raises(RuntimeError, match="COMPARE_TMP_DIR must point inside IMAGE_BASE_DIR"):
+        tasks_module._store_temp_image(b"z", "sample.png")
+
+
 def _canonical_hmac_message(
     method: str,
     path: str,

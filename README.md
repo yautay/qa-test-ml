@@ -154,8 +154,9 @@ Configuration priority (highest to lowest):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `JOB_STORE_BACKEND` | `redis` | Job storage: `redis` or `memory` |
+| `IMAGE_BASE_DIR` | `.` | Base directory for image file access; image paths and temp compare files must stay under this directory |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis connection |
-| `COMPARE_TMP_DIR` | system temp dir | Directory for temporary uploaded images during job execution |
+| `COMPARE_TMP_DIR` | `.compare_tmp` | Directory for temporary uploaded images during job execution (resolved under `IMAGE_BASE_DIR`) |
 | `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery broker URL |
 | `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/0` | Celery result backend |
 | `COMPARE_QUEUE_CPU` | `compare-cpu` | CPU worker queue name |

@@ -12,6 +12,7 @@ from loguru import logger
 from app.core.celery_app import celery_app
 from app.core.config import get_str
 from app.core.execution import queue_names
+from app.core.image_io import resolve_input_path
 from app.core.job_store import get_job_store
 from app.core.metrics import (
     job_duration_seconds,
@@ -41,10 +42,14 @@ _GPU_ERROR_TOKENS = (
 
 def _store_temp_image(content: bytes, original_name: str) -> str:
     suffix = os.path.splitext(original_name)[1] or ".png"
-    configured_tmp_dir = get_str("COMPARE_TMP_DIR", "").strip()
-    base_dir = tempfile.gettempdir()
-    if configured_tmp_dir:
-        base_dir = os.path.realpath(os.path.abspath(configured_tmp_dir))
+    configured_tmp_dir = get_str("COMPARE_TMP_DIR", ".compare_tmp").strip() or ".compare_tmp"
+    try:
+        base_dir = resolve_input_path(configured_tmp_dir)
+    except PermissionError as exc:
+        raise RuntimeError(
+            "COMPARE_TMP_DIR must point inside IMAGE_BASE_DIR "
+            f"(got: {configured_tmp_dir!r})"
+        ) from exc
     os.makedirs(base_dir, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix="compare_job_", suffix=suffix, dir=base_dir)
     with os.fdopen(fd, "wb") as f:
