@@ -75,7 +75,7 @@ services:
       - cpu
 
   worker-gpu:
-    image: nvidia/cuda:12.4.1-runtime-ubuntu22.04
+    image: nvidia/cuda:12.4.1-runtime-ubuntu24.04
     container_name: pms-worker-gpu
     working_dir: /workspace
     volumes:
@@ -95,8 +95,8 @@ services:
       mkdir -p /root/.cache/torch/hub/checkpoints &&
       curl -o /root/.cache/torch/hub/checkpoints/vgg16-397923af.pth https://download.pytorch.org/models/vgg16-397923af.pth &&
       curl -o /root/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth https://download.pytorch.org/models/alexnet-owt-7be5be79.pth &&
-      pip install --no-cache-dir -r requirements.txt &&
-      celery -A app.core.celery_app:celery_app worker -Q ${COMPARE_QUEUE_GPU:-compare-gpu} --concurrency=${CELERY_GPU_CONCURRENCY:-1} --loglevel=${CELERY_LOG_LEVEL:-INFO}"
+      python3 -m pip install --no-cache-dir -r requirements.txt &&
+      python3 -m celery -A app.core.celery_app:celery_app worker -Q ${COMPARE_QUEUE_GPU:-compare-gpu} --concurrency=${CELERY_GPU_CONCURRENCY:-1} --loglevel=${CELERY_LOG_LEVEL:-INFO}"
     depends_on:
       - redis
     deploy:
