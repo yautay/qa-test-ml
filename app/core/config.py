@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import os
-import tomllib
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -23,9 +27,6 @@ def _config_file_path() -> Path:
 
 @lru_cache(maxsize=1)
 def _file_env_values() -> dict[str, str]:
-    if tomllib is None:
-        return {}
-
     config_path = _config_file_path()
     if not config_path.exists() or not config_path.is_file():
         return {}

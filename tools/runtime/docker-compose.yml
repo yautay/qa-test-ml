@@ -75,7 +75,7 @@ services:
       - cpu
 
   worker-gpu:
-    image: nvidia/cuda:12.4.1-runtime-ubuntu24.04
+    image: nvidia/cuda:12.4.1-runtime-ubuntu22.04
     container_name: pms-worker-gpu
     working_dir: /workspace
     volumes:
