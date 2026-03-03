@@ -1,7 +1,7 @@
 [env]
 API_DEBUG = "1"
 IMAGE_BASE_DIR = "."
-COMPARE_TMP_DIR = ""
+COMPARE_TMP_DIR = ".compare_tmp"
 LOG_LEVEL = "INFO"
 
 # API hardening

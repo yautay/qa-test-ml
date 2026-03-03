@@ -78,7 +78,8 @@ Jak ustawiać zmienne:
 
 Główne ustawienia runtime:
 - `JOB_STORE_BACKEND` (`redis` lub `memory`)
-- `REDIS_URL`, `REDIS_PREFIX`, `COMPARE_TMP_DIR`
+- `IMAGE_BASE_DIR`, `COMPARE_TMP_DIR` (tmp musi być pod `IMAGE_BASE_DIR`)
+- `REDIS_URL`, `REDIS_PREFIX`
 - `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
 - `COMPARE_QUEUE_CPU`, `COMPARE_QUEUE_GPU`, `ENABLE_GPU_QUEUE`, `COMPARE_EXECUTION_DEVICE`
 - `CELERY_CPU_CONCURRENCY`, `CELERY_GPU_CONCURRENCY` (w `tools/runtime/.env`)
@@ -86,6 +87,13 @@ Główne ustawienia runtime:
 - `COMPARE_MAX_IMAGE_SIDE`, `COMPARE_MAX_IMAGE_PIXELS`
 - `COMPARE_RATE_LIMIT_ENABLED`, `COMPARE_RATE_LIMIT_*`
 - `HMAC_ENABLED`, `HMAC_SECRET`, `HMAC_ALLOWED_SKEW_SEC`, `HMAC_REQUIRE_NONCE`, `HMAC_NONCE_TTL_SEC`
+
+Bezpieczny snippet dla workerów (eliminuje błąd `Path is outside IMAGE_BASE_DIR`):
+
+```env
+IMAGE_BASE_DIR=.
+COMPARE_TMP_DIR=.compare_tmp
+```
 
 ### HMAC - kontrakt integracyjny
 
@@ -146,4 +154,3 @@ make full-check
 
 - Używamy pre-commit
 - Każdy commit powinien przechodzić make full-check
-
