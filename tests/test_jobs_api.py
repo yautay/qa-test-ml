@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import time
 import uuid
 from collections.abc import Iterator
@@ -10,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core import config as app_config
+from app.core import hmac_auth as hmac_auth_module
 from app.core import job_store as job_store_module
 
 
@@ -18,10 +21,13 @@ def _test_runtime(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
     monkeypatch.setenv("CELERY_TASK_ALWAYS_EAGER", "true")
     monkeypatch.setenv("CELERY_TASK_EAGER_PROPAGATES", "false")
+    monkeypatch.setenv("HMAC_ENABLED", "false")
     app_config._clear_config_cache()
+    hmac_auth_module._clear_nonce_cache()
     job_store_module._clear_job_store_cache()
     yield
     app_config._clear_config_cache()
+    hmac_auth_module._clear_nonce_cache()
     job_store_module._clear_job_store_cache()
 
 
@@ -152,6 +158,51 @@ def _wait_terminal(client: TestClient, job_id: str) -> dict[str, Any]:
 def _asset_bytes(filename: str) -> bytes:
     path = Path(__file__).parent / "assets" / filename
     return path.read_bytes()
+
+
+def _canonical_hmac_message(
+    method: str,
+    path: str,
+    *,
+    query: str,
+    fields: dict[str, str],
+    timestamp: str,
+    nonce: str,
+) -> str:
+    lines = [method.upper(), path, f"query={query}"]
+    for key in sorted(fields):
+        lines.append(f"{key}={fields[key]}")
+    lines.append(f"timestamp={timestamp}")
+    lines.append(f"nonce={nonce}")
+    return "\n".join(lines)
+
+
+def _hmac_headers(
+    secret: str,
+    method: str,
+    path: str,
+    *,
+    query: str = "",
+    fields: dict[str, str] | None = None,
+    timestamp: str | None = None,
+    nonce: str | None = None,
+) -> dict[str, str]:
+    ts = timestamp or str(int(time.time()))
+    nonce_value = nonce or str(uuid.uuid4())
+    canonical = _canonical_hmac_message(
+        method,
+        path,
+        query=query,
+        fields=fields or {},
+        timestamp=ts,
+        nonce=nonce_value,
+    )
+    signature = hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+    return {
+        "X-HMAC-Timestamp": ts,
+        "X-HMAC-Nonce": nonce_value,
+        "X-HMAC-Signature": signature,
+    }
 
 
 def test_create_job_and_poll_done(monkeypatch: pytest.MonkeyPatch, client: TestClient):
@@ -334,3 +385,164 @@ def test_heatmap_failure_marks_job_as_error(monkeypatch: pytest.MonkeyPatch, cli
         error_body["error_message"]
         == "LPIPS heatmap generation failed. Please verify image dimensions/content and retry."
     )
+
+
+def test_hmac_enabled_rejects_missing_headers(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("HMAC_ENABLED", "true")
+    monkeypatch.setenv("HMAC_SECRET", "secret-123")
+    app_config._clear_config_cache()
+
+    response = client.get("/v1/compare/jobs")
+    assert response.status_code == 401
+
+
+def test_hmac_enabled_accepts_valid_signed_create_job(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("HMAC_ENABLED", "true")
+    monkeypatch.setenv("HMAC_SECRET", "secret-123")
+    app_config._clear_config_cache()
+
+    job_id = str(uuid.uuid4())
+    img_a = _asset_bytes("ref_1.png")
+    img_b = _asset_bytes("test_1.png")
+    fields = {
+        "job_id": job_id,
+        "pair_id": "pair_hmac_1",
+        "metric": "both",
+        "model": "alex",
+        "normalize": "true",
+        "img_a_sha256": hashlib.sha256(img_a).hexdigest(),
+        "img_b_sha256": hashlib.sha256(img_b).hexdigest(),
+    }
+    headers = _hmac_headers("secret-123", "POST", "/v1/compare/jobs", fields=fields)
+
+    response = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_hmac_1",
+            "metric": "both",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.png", img_a, "image/png"),
+            "img_b": ("b.png", img_b, "image/png"),
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 202
+
+
+def test_hmac_enabled_rejects_old_timestamp(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("HMAC_ENABLED", "true")
+    monkeypatch.setenv("HMAC_SECRET", "secret-123")
+    monkeypatch.setenv("HMAC_ALLOWED_SKEW_SEC", "10")
+    app_config._clear_config_cache()
+
+    old_timestamp = str(int(time.time()) - 3600)
+    headers = _hmac_headers(
+        "secret-123",
+        "GET",
+        "/v1/compare/jobs",
+        timestamp=old_timestamp,
+        nonce=str(uuid.uuid4()),
+    )
+    response = client.get("/v1/compare/jobs", headers=headers)
+    assert response.status_code == 401
+
+
+def test_hmac_enabled_rejects_replayed_nonce(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("HMAC_ENABLED", "true")
+    monkeypatch.setenv("HMAC_SECRET", "secret-123")
+    app_config._clear_config_cache()
+
+    nonce = str(uuid.uuid4())
+    ts = str(int(time.time()))
+    first_headers = _hmac_headers(
+        "secret-123",
+        "GET",
+        "/v1/compare/jobs",
+        timestamp=ts,
+        nonce=nonce,
+    )
+    first_response = client.get("/v1/compare/jobs", headers=first_headers)
+    assert first_response.status_code == 200
+
+    second_headers = _hmac_headers(
+        "secret-123",
+        "GET",
+        "/v1/compare/jobs",
+        timestamp=ts,
+        nonce=nonce,
+    )
+    second_response = client.get("/v1/compare/jobs", headers=second_headers)
+    assert second_response.status_code == 401
+
+
+def test_create_job_rejects_payload_too_large(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("COMPARE_MAX_TOTAL_UPLOAD_BYTES", "100")
+    app_config._clear_config_cache()
+
+    job_id = str(uuid.uuid4())
+    response = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_large",
+            "metric": "lpips",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.png", _asset_bytes("ref_1.png"), "image/png"),
+            "img_b": ("b.png", _asset_bytes("test_1.png"), "image/png"),
+        },
+    )
+
+    assert response.status_code == 413
+
+
+def test_create_job_rejects_unsupported_media_type(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+
+    job_id = str(uuid.uuid4())
+    response = client.post(
+        "/v1/compare/jobs",
+        data={
+            "job_id": job_id,
+            "pair_id": "pair_media",
+            "metric": "lpips",
+            "model": "alex",
+            "normalize": "true",
+        },
+        files={
+            "img_a": ("a.txt", b"not-an-image", "text/plain"),
+            "img_b": ("b.png", _asset_bytes("test_1.png"), "image/png"),
+        },
+    )
+
+    assert response.status_code == 415
+
+
+def test_rate_limit_blocks_burst_reads(monkeypatch: pytest.MonkeyPatch, client: TestClient):
+    _install_dummy_metrics(monkeypatch)
+    monkeypatch.setenv("COMPARE_RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("COMPARE_RATE_LIMIT_READ_LIMIT", "2")
+    monkeypatch.setenv("COMPARE_RATE_LIMIT_READ_WINDOW_SEC", "60")
+    app_config._clear_config_cache()
+
+    first = client.get("/v1/compare/jobs")
+    second = client.get("/v1/compare/jobs")
+    third = client.get("/v1/compare/jobs")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429

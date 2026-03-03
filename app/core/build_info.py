@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -40,16 +41,26 @@ def _run_git(args: list[str]) -> str | None:
     return output.splitlines()[0].strip() or None
 
 
+def _env_override(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized
+
+
 @lru_cache(maxsize=1)
 def get_git_metadata() -> GitMetadata:
-    branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"]) or "unknown"
-    tag = _run_git(["tag", "--points-at", "HEAD"])
+    branch = _env_override("APP_GIT_BRANCH") or _run_git(["rev-parse", "--abbrev-ref", "HEAD"]) or "unknown"
+    tag = _env_override("APP_GIT_TAG") or _run_git(["tag", "--points-at", "HEAD"])
     if not tag:
         tag = _run_git(["describe", "--tags", "--always"])
     tag = tag or "unknown"
-    last_commit = _run_git(["rev-parse", "HEAD"]) or "unknown"
-    committer = _run_git(["show", "-s", "--format=%cn", "HEAD"]) or "unknown"
-    date = _run_git(["show", "-s", "--format=%cI", "HEAD"]) or "unknown"
+    last_commit = _env_override("APP_GIT_LAST_COMMIT") or _run_git(["rev-parse", "HEAD"]) or "unknown"
+    committer = _env_override("APP_GIT_COMMITTER") or _run_git(["show", "-s", "--format=%cn", "HEAD"]) or "unknown"
+    date = _env_override("APP_GIT_COMMIT_DATE") or _run_git(["show", "-s", "--format=%cI", "HEAD"]) or "unknown"
 
     return GitMetadata(
         branch=branch,

@@ -202,11 +202,19 @@ class RedisJobStore(JobStore):
         return JobState.from_dict(data)
 
     def list_jobs(self) -> list[JobState]:
-        ids = self._redis.zrange(self._jobs_index_key(), 0, -1)
+        index_key = self._jobs_index_key()
+        ids = self._redis.zrange(index_key, 0, -1)
         if not ids:
             return []
-        keys = [self._job_key(job_id.decode("utf-8")) for job_id in ids]
+
+        normalized_ids = [job_id.decode("utf-8") if isinstance(job_id, bytes) else str(job_id) for job_id in ids]
+        keys = [self._job_key(job_id) for job_id in normalized_ids]
         rows = self._redis.mget(keys)
+
+        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows) if row is None]
+        if stale_ids:
+            self._redis.zrem(index_key, *stale_ids)
+
         valid_rows = [row for row in rows if row is not None]
         return self._parse_jobs(valid_rows)
 

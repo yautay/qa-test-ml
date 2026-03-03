@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from celery import Celery
+from celery.signals import worker_init, worker_process_shutdown, worker_ready
+from prometheus_client import REGISTRY, CollectorRegistry, multiprocess, start_http_server
 
 from app.core.config import get_bool, get_int, get_str
 
@@ -39,3 +43,58 @@ def create_celery_app() -> Celery:
 
 
 celery_app = create_celery_app()
+
+
+def _prometheus_enabled() -> bool:
+    return get_bool("PROMETHEUS_WORKER_ENABLED", default=False)
+
+
+def _prometheus_registry() -> CollectorRegistry:
+    multiproc_dir = get_str("PROMETHEUS_MULTIPROC_DIR", "").strip()
+    if not multiproc_dir:
+        return REGISTRY
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    return registry
+
+
+@worker_init.connect
+def _worker_init_prometheus(**_: object) -> None:
+    if not _prometheus_enabled():
+        return
+
+    multiproc_dir = get_str("PROMETHEUS_MULTIPROC_DIR", "").strip()
+    if not multiproc_dir:
+        return
+
+    dir_path = Path(multiproc_dir)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    for db_file in dir_path.glob("*.db"):
+        db_file.unlink(missing_ok=True)
+
+
+@worker_ready.connect
+def _worker_ready_prometheus(**_: object) -> None:
+    if not _prometheus_enabled():
+        return
+
+    port = get_int("PROMETHEUS_WORKER_PORT", 9101)
+    addr = get_str("PROMETHEUS_WORKER_ADDR", "0.0.0.0").strip() or "0.0.0.0"
+
+    registry = _prometheus_registry()
+    start_http_server(port, addr=addr, registry=registry)
+
+
+@worker_process_shutdown.connect
+def _worker_process_shutdown_prometheus(pid: int | None = None, **_: object) -> None:
+    if not _prometheus_enabled():
+        return
+
+    if pid is None:
+        return
+
+    if not get_str("PROMETHEUS_MULTIPROC_DIR", "").strip():
+        return
+
+    multiprocess.mark_process_dead(pid)
