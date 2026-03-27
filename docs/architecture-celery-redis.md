@@ -6,6 +6,7 @@
 - Broker/Store (`Redis`): task broker for Celery and shared job state storage.
 - Workers (`Celery`): execute LPIPS/DISTS calculations and heatmap generation.
 - Monitoring (`Prometheus` + `Grafana`): collects and visualizes runtime metrics.
+- Redis jobs index is garbage-collected automatically using TTL-based score pruning.
 
 ## Data Flow
 

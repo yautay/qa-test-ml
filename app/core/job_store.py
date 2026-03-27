@@ -108,28 +108,63 @@ class JobStore:
 class MemoryJobStore(JobStore):
     backend_name = "memory"
 
-    def __init__(self):
+    def __init__(self, *, job_ttl_sec: int = 0, heatmap_ttl_sec: int = 0):
         self._jobs: dict[str, JobState] = {}
         self._heatmaps: dict[str, bytes] = {}
+        self._heatmap_created_at_ms: dict[str, int] = {}
+        self._job_ttl_sec = max(0, job_ttl_sec)
+        self._heatmap_ttl_sec = max(0, heatmap_ttl_sec)
         self._lock = threading.Lock()
+
+    def _prune_expired_locked(self) -> None:
+        now = now_ms()
+
+        if self._job_ttl_sec > 0:
+            ttl_ms = self._job_ttl_sec * 1000
+            expired_jobs = [
+                job_id
+                for job_id, job in self._jobs.items()
+                if job.created_at_ms > 0 and (now - job.created_at_ms) >= ttl_ms
+            ]
+            for job_id in expired_jobs:
+                self._jobs.pop(job_id, None)
+                self._heatmaps.pop(job_id, None)
+                self._heatmap_created_at_ms.pop(job_id, None)
+
+        if self._heatmap_ttl_sec > 0:
+            ttl_ms = self._heatmap_ttl_sec * 1000
+            expired_heatmaps = [
+                job_id
+                for job_id, created_at_ms in self._heatmap_created_at_ms.items()
+                if created_at_ms > 0 and (now - created_at_ms) >= ttl_ms
+            ]
+            for job_id in expired_heatmaps:
+                self._heatmaps.pop(job_id, None)
+                self._heatmap_created_at_ms.pop(job_id, None)
+                if job_id in self._jobs:
+                    self._jobs[job_id].has_heatmap = False
 
     def create_job(self, job: JobState) -> None:
         with self._lock:
+            self._prune_expired_locked()
             if job.job_id in self._jobs:
                 raise ValueError(f"Job already exists: {job.job_id}")
             self._jobs[job.job_id] = job
 
     def get_job(self, job_id: str) -> JobState | None:
         with self._lock:
+            self._prune_expired_locked()
             return self._jobs.get(job_id)
 
     def list_jobs(self) -> list[JobState]:
         with self._lock:
+            self._prune_expired_locked()
             values = list(self._jobs.values())
         return sorted(values, key=lambda item: item.created_at_ms)
 
     def update_job(self, job_id: str, **fields: object) -> JobState:
         with self._lock:
+            self._prune_expired_locked()
             job = self._jobs[job_id]
             for key, value in fields.items():
                 setattr(job, key, value)
@@ -137,12 +172,15 @@ class MemoryJobStore(JobStore):
 
     def set_heatmap(self, job_id: str, heatmap_png: bytes) -> None:
         with self._lock:
+            self._prune_expired_locked()
             self._heatmaps[job_id] = heatmap_png
+            self._heatmap_created_at_ms[job_id] = now_ms()
             if job_id in self._jobs:
                 self._jobs[job_id].has_heatmap = True
 
     def get_heatmap(self, job_id: str) -> bytes | None:
         with self._lock:
+            self._prune_expired_locked()
             return self._heatmaps.get(job_id)
 
     def is_available(self) -> bool:
@@ -159,11 +197,14 @@ class RedisJobStore(JobStore):
         prefix: str,
         job_ttl_sec: int,
         heatmap_ttl_sec: int,
+        index_gc_interval_sec: int,
     ):
         self._redis = redis_client
         self._prefix = prefix
         self._job_ttl_sec = max(0, job_ttl_sec)
         self._heatmap_ttl_sec = max(0, heatmap_ttl_sec)
+        self._index_gc_interval_sec = max(1, index_gc_interval_sec)
+        self._last_index_gc_ms = 0
 
     def _job_key(self, job_id: str) -> str:
         return f"{self._prefix}:job:{job_id}"
@@ -174,7 +215,26 @@ class RedisJobStore(JobStore):
     def _jobs_index_key(self) -> str:
         return f"{self._prefix}:jobs:index"
 
+    def _maybe_gc_jobs_index(self) -> None:
+        if self._job_ttl_sec <= 0:
+            return
+
+        now = now_ms()
+        if (now - self._last_index_gc_ms) < (self._index_gc_interval_sec * 1000):
+            return
+
+        cutoff_ms = now - self._job_ttl_sec * 1000
+        index_key = self._jobs_index_key()
+        try:
+            self._redis.zremrangebyscore(index_key, 0, cutoff_ms)
+            self._last_index_gc_ms = now
+        except Exception as exc:
+            logger.bind(class_name="RedisJobStore", method_name="_maybe_gc_jobs_index").opt(exception=exc).warning(
+                "Redis index GC failed"
+            )
+
     def create_job(self, job: JobState) -> None:
+        self._maybe_gc_jobs_index()
         key = self._job_key(job.job_id)
         payload = json.dumps(job.to_dict())
         created = self._redis.set(key, payload, nx=True, ex=self._job_ttl_sec or None)
@@ -192,6 +252,7 @@ class RedisJobStore(JobStore):
         return out
 
     def get_job(self, job_id: str) -> JobState | None:
+        self._maybe_gc_jobs_index()
         row = self._redis.get(self._job_key(job_id))
         if row is None:
             return None
@@ -202,6 +263,7 @@ class RedisJobStore(JobStore):
         return JobState.from_dict(data)
 
     def list_jobs(self) -> list[JobState]:
+        self._maybe_gc_jobs_index()
         index_key = self._jobs_index_key()
         ids = self._redis.zrange(index_key, 0, -1)
         if not ids:
@@ -219,6 +281,7 @@ class RedisJobStore(JobStore):
         return self._parse_jobs(valid_rows)
 
     def update_job(self, job_id: str, **fields: object) -> JobState:
+        self._maybe_gc_jobs_index()
         key = self._job_key(job_id)
         row = self._redis.get(key)
         if row is None:
@@ -261,12 +324,16 @@ class RedisJobStore(JobStore):
 def create_job_store() -> JobStore:
     backend = get_str("JOB_STORE_BACKEND", "redis").strip().lower()
     if backend == "memory":
-        return MemoryJobStore()
+        return MemoryJobStore(
+            job_ttl_sec=get_int("JOB_TTL_SEC", 86400),
+            heatmap_ttl_sec=get_int("HEATMAP_TTL_SEC", 86400),
+        )
 
     redis_url = get_str("REDIS_URL", "redis://127.0.0.1:6379/0")
     prefix = get_str("REDIS_PREFIX", "pms").strip() or "pms"
     job_ttl_sec = get_int("JOB_TTL_SEC", 86400)
     heatmap_ttl_sec = get_int("HEATMAP_TTL_SEC", 86400)
+    index_gc_interval_sec = get_int("JOB_INDEX_GC_INTERVAL_SEC", 300)
 
     if not _HAS_REDIS:
         raise RuntimeError("Redis backend selected but 'redis' package is not installed")
@@ -279,6 +346,7 @@ def create_job_store() -> JobStore:
         prefix=prefix,
         job_ttl_sec=job_ttl_sec,
         heatmap_ttl_sec=heatmap_ttl_sec,
+        index_gc_interval_sec=index_gc_interval_sec,
     )
 
 

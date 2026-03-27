@@ -155,6 +155,9 @@ Configuration priority (highest to lowest):
 |----------|---------|-------------|
 | `JOB_STORE_BACKEND` | `redis` | Job storage: `redis` or `memory` |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis connection |
+| `JOB_TTL_SEC` | `86400` | TTL for stored job state (applies to Redis keys and memory backend retention) |
+| `HEATMAP_TTL_SEC` | `86400` | TTL for stored heatmap payloads |
+| `JOB_INDEX_GC_INTERVAL_SEC` | `300` | Interval for automatic Redis jobs-index garbage collection |
 | `COMPARE_TMP_DIR` | system temp dir | Directory for temporary uploaded images during job execution |
 | `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery broker URL |
 | `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/0` | Celery result backend |

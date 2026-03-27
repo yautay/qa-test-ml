@@ -23,7 +23,7 @@ def create_app() -> FastAPI:
     validate_hmac_settings()
     app = FastAPI(
         title="Perceptual Metrics Service",
-        version="1.0.0",
+        version="1.0.1",
         description=(
             "API for LPIPS/DISTS image similarity scoring and LPIPS heatmap generation. "
             "Supports asynchronous comparison jobs API."
