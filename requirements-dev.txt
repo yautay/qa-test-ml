@@ -2,6 +2,7 @@
 pytest==8.4.2
 pytest-cov
 pip-audit
+bandit[toml]
 pipdeptree
 pip-check-reqs
 ruff

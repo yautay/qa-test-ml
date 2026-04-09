@@ -1,0 +1,101 @@
+---
+# Bitbucket Pipelines CI for Perceptual Metrics Service
+# Docs: https://support.atlassian.com/bitbucket-cloud/docs/bitbucket-pipelines-configuration-reference/
+
+image: python:3.12-slim
+
+definitions:
+  caches:
+    pip-dev: ~/.cache/pip
+
+  steps:
+    - step: &install-and-test
+        name: Test
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - pytest -q
+              --cov=app
+              --cov-report=term-missing
+              --junitxml=pytest-results.xml
+        artifacts:
+          - pytest-results.xml
+        environment:
+          CELERY_TASK_ALWAYS_EAGER: "true"
+          JOB_STORE_BACKEND: memory
+
+    - step: &lint-ruff
+        name: Lint (ruff)
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - ruff check .
+
+    - step: &lint-black
+        name: Format check (black)
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - black --check .
+
+    - step: &type-check
+        name: Type check (mypy)
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - mypy .
+
+    - step: &pip-audit
+        name: Dependency audit (pip-audit)
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - pip-audit
+
+    - step: &bandit
+        name: Static security analysis (bandit)
+        caches:
+          - pip-dev
+        script:
+          - pip install --upgrade pip
+          - pip install -r requirements-dev.txt
+          - bandit -r app/ -ll
+
+pipelines:
+  default:
+    - parallel:
+        - step: *install-and-test
+        - step: *lint-ruff
+        - step: *lint-black
+        - step: *type-check
+        - step: *pip-audit
+        - step: *bandit
+
+  branches:
+    main:
+      - parallel:
+          - step: *install-and-test
+          - step: *lint-ruff
+          - step: *lint-black
+          - step: *type-check
+          - step: *pip-audit
+          - step: *bandit
+
+    develop:
+      - parallel:
+          - step: *install-and-test
+          - step: *lint-ruff
+          - step: *lint-black
+          - step: *type-check
+          - step: *pip-audit
+          - step: *bandit
