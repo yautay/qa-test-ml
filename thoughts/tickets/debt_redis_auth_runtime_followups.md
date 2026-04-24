@@ -2,7 +2,7 @@
 type: debt
 priority: high
 created: 2026-04-24T12:30:00Z
-status: implemented
+status: reviewed
 tags: [redis, fastapi, startup, lifespan, integration-tests, job-store, celery]
 keywords: [JobStore, lifespan, app.on_event, startup validation, redis auth, REDIS_URL, REDIS_HOST, REDIS_USERNAME, REDIS_PASSWORD, health, celery, integration test, docker compose]
 patterns: [FastAPI lifespan migration, startup dependency initialization, fail-fast validation, auth-enabled Redis integration testing, negative auth test coverage, pytest markers for integration tests, health contract behavior, compose-based local verification]
