@@ -1,92 +1,45 @@
-# AGENTS Playbook
+# AGENTS
 
-Ten dokument definiuje zasady pracy agentow (AI i developerow) dla repozytorium `qa-test-pms`.
-Cele: szybsza realizacja zadan, nizsze zuzycie tokenow oraz spojnosc techniczna kodu.
+## Fast Facts
+- Python `3.12`.
+- Main app entrypoint: `app.main:create_app`; runtime serves `/health`, `/metrics`, and `/v1/compare/*`.
+- The async flow is: FastAPI route -> `JobStore` -> Celery task -> metric registry -> shared job state back in store.
 
-## 1) Kontekst systemu
+## High-Value Commands
+- Install runtime deps: `pip install -r requirements.txt`
+- Install dev deps: `pip install -r requirements-dev.txt`
+- Run app locally: `uvicorn app.main:app --reload`
+- Fast test pass: `pytest -q`
+- Single test/file: `pytest -q tests/test_jobs_api.py -k <expr>`
+- Lint: `ruff check .`
+- Format check: `black --check .`
+- Type check: `mypy .`
+- CI-equivalent security checks: `pip-audit` and `bandit -r app/ -ll`
+- Convenience sweep: `make full-check`
 
-Projekt to usluga FastAPI do porownywania obrazow (LPIPS/DISTS), z przetwarzaniem asynchronicznym przez Celery i wspolnym stanem w Redis.
+## Verified Workflow Notes
+- CI installs `requirements-dev.txt` and then runs: tests with coverage -> `ruff check .` -> `black --check .` -> `mypy .` -> `pip-audit` -> `bandit -r app/ -ll`.
+- `make full-check` is not identical to CI: it skips `black --check` and instead ends with `pre-commit run --all-files`.
+- Pre-commit runs `ruff --fix`, `black`, and `mypy`; expect hooks to rewrite files.
 
-Przeplyw high-level:
-1. API (`app/api/routes`) przyjmuje zlecenie i waliduje dane (`app/schemas`).
-2. Job jest zapisywany w `JobStore` (`app/core/job_store.py`).
-3. Celery task (`app/tasks/compare_tasks.py`) wykonuje obliczenia metryk (`app/metrics`).
-4. Wynik i status wracaja do Redis; API zwraca status klientowi.
+## Architecture Boundaries
+- Keep HTTP concerns in `app/api/routes/*`; shared runtime/config/infrastructure lives in `app/core/*`.
+- Metric implementations live in `app/metrics/*` and must be registered in `app/core/registry.py` or the app will not expose/use them.
+- Celery is configured in `app/core/celery_app.py`; compare jobs are executed by `app.tasks.compare_tasks.process_compare_job`.
 
-## 2) Zasady architektury
+## Config And Runtime Gotchas
+- Config resolution order is cached and is: process env -> `config.toml` `[env]` -> code defaults.
+- If tests change env vars, clear config/store caches like the existing tests do (`app.core.config._clear_config_cache()`, `app.core.job_store._clear_job_store_cache()`, and HMAC nonce cache when relevant).
+- `JOB_STORE_BACKEND=redis` is fail-fast at app startup. Most tests use `JOB_STORE_BACKEND=memory`.
+- For API/job tests, set `CELERY_TASK_ALWAYS_EAGER=true`; existing tests also set `CELERY_TASK_EAGER_PROPAGATES=false`.
+- `COMPARE_TMP_DIR` must stay inside `IMAGE_BASE_DIR`; the repo's safe default is `IMAGE_BASE_DIR=.` with `COMPARE_TMP_DIR=.compare_tmp`.
+- GPU routing is not controlled by `COMPARE_EXECUTION_DEVICE` alone; `ENABLE_GPU_QUEUE=true` must also be set or jobs stay on the CPU queue.
+- GPU task failures can requeue once onto the CPU queue; preserve that behavior when touching task error handling.
+- Keep `PROMETHEUS_MULTIPROC_DIR` outside the repo (for example `/tmp/pms-prom-worker`) or worker `*.db` shards will pollute `git status`.
 
-1. Separacja warstw:
-   - `app/api/*`: transport HTTP, bez logiki domenowej.
-   - `app/schemas/*`: kontrakty wejscia/wyjscia.
-   - `app/core/*`: konfiguracja, infrastruktura, mechanizmy wspolne.
-   - `app/metrics/*`: czysta logika metryk.
-   - `app/tasks/*`: orkiestracja przetwarzania asynchronicznego.
-
-2. Kierunek zaleznosci:
-   - API moze uzywac `schemas`, `core`, `tasks`.
-   - `metrics` nie zalezy od `api`.
-   - Kod domenowy nie importuje endpointow.
-
-3. Rozszerzanie funkcjonalnosci:
-   - Nowy endpoint: dodaj route + schema + test API.
-   - Nowa metryka: dodaj implementacje w `app/metrics`, rejestracje w `app/core/registry.py`, testy jednostkowe i integracyjne.
-   - Nowy backend infrastrukturalny: izoluj za interfejsem w `app/core`.
-
-4. Stabilnosc i observability:
-   - Kazda sciezka bledna musi zwracac kontrolowany blad i log z kontekstem.
-   - Metryki runtime utrzymuj zgodne z Prometheus naming i etykietami istniejacymi w projekcie.
-
-## 3) Styl kodowania
-
-1. Python 3.12, pelne type hints dla nowego kodu.
-2. Format i lint:
-   - `black` (line length 120)
-   - `ruff`
-   - `mypy` dla modulow modyfikowanych
-3. Czytelnosc:
-   - Male funkcje, jedna odpowiedzialnosc.
-   - Brak ukrytych efektow ubocznych.
-   - Nazwy jawne, bez skrotow biznesowych niezdefiniowanych w domenie.
-4. Bledy i walidacja:
-   - Waliduj dane na granicy systemu (schema/route).
-   - Uzywaj jawnych wyjatkow i jednolitego mapowania na odpowiedzi API.
-5. Logowanie:
-   - Logi strukturalne i neutralne (bez danych wrazliwych, tokenow, sekretow).
-   - Poziom logowania dobrany do istotnosci (`DEBUG` tylko diagnostyka).
-
-## 4) Standard testow
-
-1. Zmiana kodu produkcyjnego wymaga adekwatnych testow.
-2. Priorytet:
-   - unit test dla logiki metryk/core,
-   - integration/API test dla kontraktow endpointow,
-   - test scenariusza bledu dla nowych warunkow brzegowych.
-3. Minimalny check przed oddaniem:
-   - `pytest -q`
-   - `ruff check .`
-   - `black --check .`
-
-## 5) Zasady pracy agenta (optymalizacja tokenow)
-
-1. Zanim cokolwiek zmienisz, czytaj tylko pliki konieczne do zadania.
-2. Uzywaj precyzyjnego wyszukiwania (`glob`, `grep`) zamiast szerokiego skanowania repo.
-3. Unikaj powtarzania tych samych odczytow i dlugich cytatow kodu.
-4. Wprowadzaj najmniejszy mozliwy patch, zgodny z istniejacym stylem.
-5. Komunikuj rezultat krotko: co zmieniono, gdzie, jak zweryfikowano.
-
-## 6) Konwencja commitow
-
-Stosuj klarowne komunikaty w stylu:
-- `docs: add agent guidelines for architecture and coding standards`
-- `feat: add <funkcja> to <modul> to support <cel biznesowy>`
-- `fix: prevent <problem> in <obszar>`
-
-Kazdy commit powinien opisywac intencje (dlaczego), nie tylko liste zmian.
-
-## 7) Definition of Done
-
-Zmiana jest gotowa, gdy:
-1. Architektonicznie pasuje do warstw i kierunku zaleznosci.
-2. Przechodzi lint/format/testy dla zmodyfikowanego zakresu.
-3. Jest opisana zrozumialym commitem.
-4. Nie pogarsza czytelnosci i nie wprowadza duplikacji.
+## Docker And Integration Tests
+- Runtime compose file: `tools/runtime/docker-compose.yml`; copy `tools/runtime/.env.example` to `tools/runtime/.env` before using it.
+- Compose profiles are meaningful: `cpu`, `gpu`, and `redis-auth`.
+- Local auth-enabled Redis for tests: `docker compose -f tools/runtime/docker-compose.yml --profile redis-auth up -d redis-auth`
+- Redis auth integration suite is opt-in only: `RUN_REDIS_INTEGRATION=1 PMS_REDIS_AUTH_URL='redis://:pms-secret@127.0.0.1:6380/0' pytest -q -m redis_integration tests/test_redis_auth_integration.py`
+- Worker containers download model checkpoints on startup (`alexnet` and `vgg16`), so first boot needs network and is slower than a normal Python service.
