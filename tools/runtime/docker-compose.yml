@@ -24,6 +24,18 @@ services:
     # Local default Redis for development. For an external service, keep this
     # service unused and point REDIS_URL or REDIS_* variables in tools/runtime/.env.
 
+  redis-auth:
+    image: redis:7.2-alpine
+    container_name: pms-redis-auth
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "pms-secret"]
+    volumes:
+      - redis-auth-data:/data
+    mem_limit: 512m
+    profiles:
+      - redis-auth
+
   api:
     image: python:3.12-slim
     container_name: pms-api
@@ -113,8 +125,11 @@ services:
 
 volumes:
   redis-data:
+  redis-auth-data:
 
 # External Redis note:
 # - Set REDIS_URL=rediss://user:password@host:port/db or clear REDIS_URL and use
 #   REDIS_HOST/REDIS_PORT/REDIS_DB/REDIS_USERNAME/REDIS_PASSWORD/REDIS_TLS.
 # - Leave CELERY_BROKER_URL and CELERY_RESULT_BACKEND empty to share the same Redis.
+# - For local auth integration tests, use profile `redis-auth` and
+#   PMS_REDIS_AUTH_URL=redis://:pms-secret@127.0.0.1:6380/0.

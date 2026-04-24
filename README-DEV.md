@@ -141,6 +141,12 @@ Kolejnosc pol: leksykograficzna po kluczu (`key=value`, jeden wpis na linie). Al
 
 pytest -q
 
+Live Redis auth integration tests sa opt-in i nie wchodza do domyslnego `pytest -q`:
+
+RUN_REDIS_INTEGRATION=1 PMS_REDIS_AUTH_URL='redis://:pms-secret@127.0.0.1:6380/0' pytest -q -m redis_integration tests/test_redis_auth_integration.py
+
+Pelna instrukcja lokalnego setupu: `docs/testing-integration.md`.
+
 ---
 
 ## Lint / Format

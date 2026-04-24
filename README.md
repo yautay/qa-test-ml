@@ -294,6 +294,15 @@ Prometheus metrics exposed at `/metrics`:
 pytest -q
 ```
 
+Redis auth integration tests are intentionally separate from the default suite.
+
+```bash
+RUN_REDIS_INTEGRATION=1 PMS_REDIS_AUTH_URL='redis://:pms-secret@127.0.0.1:6380/0' \
+pytest -q -m redis_integration tests/test_redis_auth_integration.py
+```
+
+Local setup instructions are documented in `docs/testing-integration.md`.
+
 ### HMAC authentication (optional)
 
 HMAC protects all `/v1/compare/*` endpoints when enabled. Public endpoints (`/health`, `/metrics`, docs) remain open.
@@ -412,6 +421,7 @@ make full-check
 ## Documentation
 
 - Architecture details: `docs/architecture-celery-redis.md`
+- Integration testing guide: `docs/testing-integration.md`
 - Hardening roadmap (stage 1/2): `docs/hardening-roadmap.md`
 - Runtime compose config: `tools/runtime/docker-compose.yml`
 - Monitoring compose config: `tools/monitoring/docker-compose.yml`

@@ -40,7 +40,8 @@ The previous implementation held job state in process memory. In multi-process m
 
 Startup behavior for `JOB_STORE_BACKEND=redis`:
 
-- Redis config is validated before first request handling.
+- API app construction does not create `JobStore`; initialization happens in FastAPI lifespan startup.
+- Redis config is validated during startup before first request handling.
 - API startup performs a Redis ping and fails fast on invalid config, rejected credentials, or unreachable Redis.
 - `/health` still reports `job_store.available` from the non-failing runtime availability check.
 
