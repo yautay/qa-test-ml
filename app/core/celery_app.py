@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from celery import Celery
 from celery.signals import worker_init, worker_process_shutdown, worker_ready
@@ -16,10 +17,25 @@ def _queue_names() -> tuple[str, str]:
     return cpu, gpu
 
 
+def _is_redis_broker_url(url: str) -> bool:
+    scheme = urlsplit(url).scheme.strip().lower()
+    return scheme in {"redis", "rediss"}
+
+
 def create_celery_app() -> Celery:
     broker = get_str("CELERY_BROKER_URL", "").strip() or get_redis_connection_settings().url
     backend = get_str("CELERY_RESULT_BACKEND", broker)
     queue_cpu, queue_gpu = _queue_names()
+    redis_prefix = get_str("REDIS_PREFIX", "pms").strip() or "pms"
+
+    broker_transport_options: dict[str, object] = {}
+    result_backend_transport_options: dict[str, object] = {}
+
+    if _is_redis_broker_url(broker):
+        broker_transport_options["global_keyprefix"] = f"{redis_prefix}:"
+
+    if _is_redis_broker_url(backend):
+        result_backend_transport_options["global_keyprefix"] = f"{redis_prefix}:"
 
     app = Celery("ai_corner", broker=broker, backend=backend, include=["app.tasks.compare_tasks"])
     app.conf.update(
@@ -38,6 +54,8 @@ def create_celery_app() -> Celery:
         task_soft_time_limit=get_int("CELERY_TASK_SOFT_TIME_LIMIT", 240),
         worker_prefetch_multiplier=get_int("CELERY_WORKER_PREFETCH_MULTIPLIER", 1),
         task_acks_late=get_bool("CELERY_ACKS_LATE", default=True),
+        broker_transport_options=broker_transport_options,
+        result_backend_transport_options=result_backend_transport_options,
     )
     app.conf.task_create_missing_queues = True
     return app

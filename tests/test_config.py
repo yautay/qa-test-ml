@@ -169,6 +169,8 @@ def test_create_celery_app_uses_shared_redis_settings_when_explicit_urls_are_abs
 
     assert celery_app.conf.broker_url == "rediss://:shared-secret@redis.internal:6380/3"
     assert celery_app.conf.result_backend == "rediss://:shared-secret@redis.internal:6380/3"
+    assert celery_app.conf.broker_transport_options == {"global_keyprefix": "pms:"}
+    assert celery_app.conf.result_backend_transport_options == {"global_keyprefix": "pms:"}
 
 
 def test_create_celery_app_prefers_explicit_celery_urls(monkeypatch: pytest.MonkeyPatch):
@@ -180,6 +182,8 @@ def test_create_celery_app_prefers_explicit_celery_urls(monkeypatch: pytest.Monk
 
     assert celery_app.conf.broker_url == "redis://broker.example:6379/7"
     assert celery_app.conf.result_backend == "redis://backend.example:6379/8"
+    assert celery_app.conf.broker_transport_options == {"global_keyprefix": "pms:"}
+    assert celery_app.conf.result_backend_transport_options == {"global_keyprefix": "pms:"}
 
 
 def test_create_app_reads_job_settings_from_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path):

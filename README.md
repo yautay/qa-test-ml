@@ -148,6 +148,10 @@ Worker metrics exposure changes monitoring behavior:
 - New `pms-worker-cpu` / `pms-worker-gpu` targets scrape Celery worker process metrics.
 - Dashboards now read real execution metrics (`started/finished/failed/inflight/duration`) from worker targets instead of showing partial or zero values from API-only scraping.
 
+Runtime hygiene:
+
+- Keep `PROMETHEUS_MULTIPROC_DIR` outside the repository (for example `/tmp/pms-prom-worker`) to avoid generating `*.db` metric shard files in git status.
+
 ## Configuration
 
 Configuration priority (highest to lowest):
@@ -180,7 +184,7 @@ Configuration priority (highest to lowest):
 | `PROMETHEUS_WORKER_ENABLED` | `false` | Enables `/metrics` HTTP server inside Celery worker process; required to collect worker-side job execution metrics |
 | `PROMETHEUS_WORKER_ADDR` | `0.0.0.0` | Bind address for worker metrics server (change if metrics must be localhost-only or restricted network scope) |
 | `PROMETHEUS_WORKER_PORT` | `9101` | Port exposed by a worker for Prometheus scraping; each worker service must use a unique port |
-| `PROMETHEUS_MULTIPROC_DIR` | (empty) | When set, enables prometheus-client multiprocess aggregation for prefork workers and stores shard files in this directory |
+| `PROMETHEUS_MULTIPROC_DIR` | `/tmp/pms-prom-worker` | Enables prometheus-client multiprocess aggregation for prefork workers; keep this directory outside the repository |
 
 ### Redis Configuration Modes
 
