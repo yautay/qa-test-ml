@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
-from app.core.job_store import RedisJobStore
+import pytest
+
+from app.core.job_store import RedisJobStore, validate_redis_job_store_startup
 
 
 class _FakeRedis:
@@ -34,6 +36,17 @@ class _FakeRedis:
         return 1
 
 
+class _PingRedis:
+    def __init__(self, *, ping_result: bool = True, ping_error: Exception | None = None):
+        self._ping_result = ping_result
+        self._ping_error = ping_error
+
+    def ping(self) -> bool:
+        if self._ping_error is not None:
+            raise self._ping_error
+        return self._ping_result
+
+
 def test_redis_list_jobs_prunes_stale_index_entries():
     redis_client = _FakeRedis()
     store = RedisJobStore(
@@ -48,3 +61,38 @@ def test_redis_list_jobs_prunes_stale_index_entries():
     assert len(jobs) == 1
     assert jobs[0].job_id == "job-1"
     assert redis_client.zrem_calls == [("pms-test:jobs:index", ("job-2",))]
+
+
+def test_validate_redis_job_store_startup_accepts_successful_ping():
+    store = RedisJobStore(
+        _PingRedis(ping_result=True),
+        prefix="pms-test",
+        job_ttl_sec=60,
+        heatmap_ttl_sec=60,
+    )
+
+    validate_redis_job_store_startup(store)
+
+
+def test_validate_redis_job_store_startup_rejects_unavailable_ping():
+    store = RedisJobStore(
+        _PingRedis(ping_result=False),
+        prefix="pms-test",
+        job_ttl_sec=60,
+        heatmap_ttl_sec=60,
+    )
+
+    with pytest.raises(RuntimeError, match="ping returned unavailable"):
+        validate_redis_job_store_startup(store)
+
+
+def test_validate_redis_job_store_startup_rejects_ping_exception():
+    store = RedisJobStore(
+        _PingRedis(ping_error=ConnectionError("redis offline")),
+        prefix="pms-test",
+        job_ttl_sec=60,
+        heatmap_ttl_sec=60,
+    )
+
+    with pytest.raises(RuntimeError, match="ping raised an exception"):
+        validate_redis_job_store_startup(store)

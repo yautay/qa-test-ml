@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
     redis_lib = None  # type: ignore[assignment]
     _HAS_REDIS = False
 
-from app.core.config import get_int, get_str
+from app.core.config import get_int, get_redis_connection_settings, get_str
 from app.schemas.compare import JobMetricName, JobStatusName
 
 
@@ -211,7 +211,7 @@ class RedisJobStore(JobStore):
         keys = [self._job_key(job_id) for job_id in normalized_ids]
         rows = self._redis.mget(keys)
 
-        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows) if row is None]
+        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows, strict=False) if row is None]
         if stale_ids:
             self._redis.zrem(index_key, *stale_ids)
 
@@ -257,13 +257,30 @@ class RedisJobStore(JobStore):
             )
             return False
 
+    def validate_startup(self) -> None:
+        try:
+            if not self._redis.ping():
+                raise RuntimeError("Redis JobStore startup validation failed: ping returned unavailable")
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.bind(class_name="RedisJobStore", method_name="validate_startup").opt(exception=exc).warning(
+                "Redis startup ping failed"
+            )
+            raise RuntimeError("Redis JobStore startup validation failed: ping raised an exception") from exc
+
+
+def validate_redis_job_store_startup(store: JobStore) -> None:
+    if isinstance(store, RedisJobStore):
+        store.validate_startup()
+
 
 def create_job_store() -> JobStore:
     backend = get_str("JOB_STORE_BACKEND", "redis").strip().lower()
     if backend == "memory":
         return MemoryJobStore()
 
-    redis_url = get_str("REDIS_URL", "redis://127.0.0.1:6379/0")
+    redis_settings = get_redis_connection_settings()
     prefix = get_str("REDIS_PREFIX", "pms").strip() or "pms"
     job_ttl_sec = get_int("JOB_TTL_SEC", 86400)
     heatmap_ttl_sec = get_int("HEATMAP_TTL_SEC", 86400)
@@ -273,7 +290,7 @@ def create_job_store() -> JobStore:
 
     redis_module = cast(Any, redis_lib)
     redis_cls = redis_module.Redis
-    redis_client = redis_cls.from_url(redis_url)
+    redis_client = redis_cls.from_url(redis_settings.url)
     return RedisJobStore(
         redis_client,
         prefix=prefix,

@@ -155,10 +155,16 @@ Configuration priority (highest to lowest):
 |----------|---------|-------------|
 | `JOB_STORE_BACKEND` | `redis` | Job storage: `redis` or `memory` |
 | `IMAGE_BASE_DIR` | `.` | Base directory for image file access; image paths and temp compare files must stay under this directory |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis connection |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Shared Redis URL for API, Celery, and JobStore; wins over split vars |
+| `REDIS_HOST` | `127.0.0.1` | Shared Redis host when `REDIS_URL` is empty |
+| `REDIS_PORT` | `6379` | Shared Redis port when `REDIS_URL` is empty |
+| `REDIS_DB` | `0` | Shared Redis database index when `REDIS_URL` is empty |
+| `REDIS_USERNAME` | empty | Optional shared Redis username |
+| `REDIS_PASSWORD` | empty | Optional shared Redis password; masked in logs |
+| `REDIS_TLS` | `false` | Use `rediss://` when split vars mode is active |
 | `COMPARE_TMP_DIR` | `.compare_tmp` | Directory for temporary uploaded images during job execution (resolved under `IMAGE_BASE_DIR`) |
-| `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery broker URL |
-| `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/0` | Celery result backend |
+| `CELERY_BROKER_URL` | shared Redis URL | Explicit Celery broker URL override |
+| `CELERY_RESULT_BACKEND` | broker/shared Redis URL | Explicit Celery result backend override |
 | `COMPARE_QUEUE_CPU` | `compare-cpu` | CPU worker queue name |
 | `COMPARE_QUEUE_GPU` | `compare-gpu` | GPU worker queue name |
 | `ENABLE_GPU_QUEUE` | `false` | Enable GPU queue |
@@ -168,6 +174,38 @@ Configuration priority (highest to lowest):
 | `PROMETHEUS_WORKER_ADDR` | `0.0.0.0` | Bind address for worker metrics server (change if metrics must be localhost-only or restricted network scope) |
 | `PROMETHEUS_WORKER_PORT` | `9101` | Port exposed by a worker for Prometheus scraping; each worker service must use a unique port |
 | `PROMETHEUS_MULTIPROC_DIR` | (empty) | When set, enables prometheus-client multiprocess aggregation for prefork workers and stores shard files in this directory |
+
+### Redis Configuration Modes
+
+Redis configuration is resolved in this order:
+
+1. `REDIS_URL`
+2. Split vars: `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`
+3. Code defaults
+
+Examples:
+
+```env
+# URL mode
+REDIS_URL=rediss://svc-user:svc-password@redis.example.com:6380/0
+
+# Split vars mode
+REDIS_URL=
+REDIS_HOST=redis.example.com
+REDIS_PORT=6380
+REDIS_DB=0
+REDIS_USERNAME=svc-user
+REDIS_PASSWORD=svc-password
+REDIS_TLS=true
+```
+
+Startup is fail-fast when `JOB_STORE_BACKEND=redis`: invalid Redis config or an unsuccessful startup ping raises a `RuntimeError` before the API serves requests.
+
+Security notes:
+
+- Startup logs expose only sanitized Redis fields such as source, TLS enabled, and whether credentials are configured.
+- Passwords are masked in URLs before logging.
+- Error messages name the invalid environment variable without echoing the secret value.
 
 ### Worker Sizing (DevOps Guide)
 

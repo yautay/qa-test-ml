@@ -6,7 +6,7 @@ from celery import Celery
 from celery.signals import worker_init, worker_process_shutdown, worker_ready
 from prometheus_client import REGISTRY, CollectorRegistry, multiprocess, start_http_server
 
-from app.core.config import get_bool, get_int, get_str
+from app.core.config import get_bool, get_int, get_redis_connection_settings, get_str
 
 
 def _queue_names() -> tuple[str, str]:
@@ -16,7 +16,7 @@ def _queue_names() -> tuple[str, str]:
 
 
 def create_celery_app() -> Celery:
-    broker = get_str("CELERY_BROKER_URL", get_str("REDIS_URL", "redis://127.0.0.1:6379/0"))
+    broker = get_str("CELERY_BROKER_URL", "").strip() or get_redis_connection_settings().url
     backend = get_str("CELERY_RESULT_BACKEND", broker)
     queue_cpu, queue_gpu = _queue_names()
 

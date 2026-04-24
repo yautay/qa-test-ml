@@ -27,6 +27,29 @@ The previous implementation held job state in process memory. In multi-process m
   - `ENABLE_GPU_QUEUE`
   - `COMPARE_EXECUTION_DEVICE` (`auto|cpu|gpu`)
 
+## Redis Configuration Contract
+
+- One shared Redis configuration is used by API startup, JobStore, Celery broker, and Celery result backend.
+- Resolution order:
+  1. `REDIS_URL`
+  2. `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`
+  3. Code defaults
+- `CELERY_BROKER_URL` overrides the shared Redis URL for the broker.
+- `CELERY_RESULT_BACKEND` overrides the broker/shared Redis URL for the result backend.
+- `REDIS_TLS=true` in split-vars mode produces a `rediss://` URL.
+
+Startup behavior for `JOB_STORE_BACKEND=redis`:
+
+- Redis config is validated before first request handling.
+- API startup performs a Redis ping and fails fast on invalid config, rejected credentials, or unreachable Redis.
+- `/health` still reports `job_store.available` from the non-failing runtime availability check.
+
+Logging and security:
+
+- Startup logs include sanitized Redis metadata only.
+- Passwords are masked in URLs before logging.
+- Validation errors identify the broken env var without logging the secret value.
+
 ## Error Handling
 
 - LPIPS heatmap failures are logged as `CRITICAL`.

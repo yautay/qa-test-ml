@@ -21,6 +21,8 @@ services:
     volumes:
       - redis-data:/data
     mem_limit: 512m
+    # Local default Redis for development. For an external service, keep this
+    # service unused and point REDIS_URL or REDIS_* variables in tools/runtime/.env.
 
   api:
     image: python:3.12-slim
@@ -111,3 +113,8 @@ services:
 
 volumes:
   redis-data:
+
+# External Redis note:
+# - Set REDIS_URL=rediss://user:password@host:port/db or clear REDIS_URL and use
+#   REDIS_HOST/REDIS_PORT/REDIS_DB/REDIS_USERNAME/REDIS_PASSWORD/REDIS_TLS.
+# - Leave CELERY_BROKER_URL and CELERY_RESULT_BACKEND empty to share the same Redis.

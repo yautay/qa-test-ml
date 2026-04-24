@@ -79,8 +79,9 @@ Jak ustawiać zmienne:
 Główne ustawienia runtime:
 - `JOB_STORE_BACKEND` (`redis` lub `memory`)
 - `IMAGE_BASE_DIR`, `COMPARE_TMP_DIR` (tmp musi być pod `IMAGE_BASE_DIR`)
-- `REDIS_URL`, `REDIS_PREFIX`
-- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+- Redis wspólny dla API/Celery/JobStore:
+  `REDIS_URL` albo `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`, oraz `REDIS_PREFIX`
+- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` tylko gdy chcesz nadpisać wspólny Redis
 - `COMPARE_QUEUE_CPU`, `COMPARE_QUEUE_GPU`, `ENABLE_GPU_QUEUE`, `COMPARE_EXECUTION_DEVICE`
 - `CELERY_CPU_CONCURRENCY`, `CELERY_GPU_CONCURRENCY` (w `tools/runtime/.env`)
 - `COMPARE_MAX_FILE_SIZE_BYTES`, `COMPARE_MAX_TOTAL_UPLOAD_BYTES`, `COMPARE_ALLOWED_IMAGE_FORMATS`
@@ -93,6 +94,28 @@ Bezpieczny snippet dla workerów (eliminuje błąd `Path is outside IMAGE_BASE_D
 ```env
 IMAGE_BASE_DIR=.
 COMPARE_TMP_DIR=.compare_tmp
+```
+
+Konfiguracja Redis:
+
+- Priorytet: `REDIS_URL` > split vars (`REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`) > domyślne wartości w kodzie.
+- Jeśli `JOB_STORE_BACKEND=redis`, aplikacja wykona startup ping do Redis i zakończy start błędem przy niepoprawnej konfiguracji lub niedostępnym Redis.
+- Logi startupowe pokazują tylko zamaskowany URL i flagi `*_configured`, bez jawnego hasła.
+
+Przykłady:
+
+```env
+# URL mode
+REDIS_URL=rediss://svc-user:svc-password@redis.example.com:6380/0
+
+# Split vars mode
+REDIS_URL=
+REDIS_HOST=redis.example.com
+REDIS_PORT=6380
+REDIS_DB=0
+REDIS_USERNAME=svc-user
+REDIS_PASSWORD=svc-password
+REDIS_TLS=true
 ```
 
 ### HMAC - kontrakt integracyjny
