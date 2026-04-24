@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
+from uuid import uuid4
 
 from loguru import logger
 
@@ -21,8 +22,19 @@ except ImportError:  # pragma: no cover
     redis_lib = None  # type: ignore[assignment]
     _HAS_REDIS = False
 
-from app.core.config import get_int, get_str
+from app.core.config import get_int, get_redis_connection_settings, get_str
 from app.schemas.compare import JobMetricName, JobStatusName
+
+_REDIS_STARTUP_CHECK_ALLOWED_MODES = {"ping", "rw", "none"}
+
+
+def get_redis_startup_check_mode() -> str:
+    mode = get_str("REDIS_STARTUP_CHECK_MODE", "ping").strip().lower() or "ping"
+    if mode not in _REDIS_STARTUP_CHECK_ALLOWED_MODES:
+        raise RuntimeError(
+            "REDIS_STARTUP_CHECK_MODE must be one of: ping, rw, none"
+        )
+    return mode
 
 
 @dataclass
@@ -248,7 +260,38 @@ class RedisJobStore(JobStore):
         result = self._redis.get(self._heatmap_key(job_id))
         return cast(bytes | None, result)
 
+    def _rw_probe(self) -> None:
+        probe_key = f"{self._prefix}:startup:probe:{uuid4().hex}"
+        probe_value = uuid4().hex
+
+        created = self._redis.set(probe_key, probe_value, ex=30)
+        if not created:
+            raise RuntimeError("Redis JobStore startup validation failed: rw probe key was not written")
+
+        row = self._redis.get(probe_key)
+        if row is None:
+            raise RuntimeError("Redis JobStore startup validation failed: rw probe key was not readable")
+
+        payload = row.decode("utf-8") if isinstance(row, bytes) else str(row)
+        if payload != probe_value:
+            raise RuntimeError("Redis JobStore startup validation failed: rw probe value mismatch")
+
+        self._redis.delete(probe_key)
+
     def is_available(self) -> bool:
+        mode = get_redis_startup_check_mode()
+        if mode == "none":
+            return True
+        if mode == "rw":
+            try:
+                self._rw_probe()
+                return True
+            except Exception as exc:
+                logger.bind(class_name="RedisJobStore", method_name="is_available").opt(exception=exc).warning(
+                    "Redis rw availability probe failed"
+                )
+                return False
+
         try:
             return bool(self._redis.ping())
         except Exception as exc:
@@ -257,13 +300,52 @@ class RedisJobStore(JobStore):
             )
             return False
 
+    def _validate_startup_ping(self) -> None:
+        try:
+            if not self._redis.ping():
+                raise RuntimeError("Redis JobStore startup validation failed: ping returned unavailable")
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.bind(class_name="RedisJobStore", method_name="validate_startup").opt(exception=exc).warning(
+                "Redis startup ping failed"
+            )
+            raise RuntimeError("Redis JobStore startup validation failed: ping raised an exception") from exc
+
+    def _validate_startup_rw(self) -> None:
+        try:
+            self._rw_probe()
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logger.bind(class_name="RedisJobStore", method_name="validate_startup").opt(exception=exc).warning(
+                "Redis startup rw probe failed"
+            )
+            raise RuntimeError("Redis JobStore startup validation failed: rw check raised an exception") from exc
+
+    def validate_startup(self, *, mode: str = "ping") -> None:
+        if mode == "none":
+            logger.bind(class_name="RedisJobStore", method_name="validate_startup").warning(
+                "Redis startup validation skipped (REDIS_STARTUP_CHECK_MODE=none)"
+            )
+            return
+        if mode == "rw":
+            self._validate_startup_rw()
+            return
+        self._validate_startup_ping()
+
+
+def validate_redis_job_store_startup(store: JobStore) -> None:
+    if isinstance(store, RedisJobStore):
+        store.validate_startup(mode=get_redis_startup_check_mode())
+
 
 def create_job_store() -> JobStore:
     backend = get_str("JOB_STORE_BACKEND", "redis").strip().lower()
     if backend == "memory":
         return MemoryJobStore()
 
-    redis_url = get_str("REDIS_URL", "redis://127.0.0.1:6379/0")
+    redis_settings = get_redis_connection_settings()
     prefix = get_str("REDIS_PREFIX", "pms").strip() or "pms"
     job_ttl_sec = get_int("JOB_TTL_SEC", 86400)
     heatmap_ttl_sec = get_int("HEATMAP_TTL_SEC", 86400)
@@ -273,7 +355,7 @@ def create_job_store() -> JobStore:
 
     redis_module = cast(Any, redis_lib)
     redis_cls = redis_module.Redis
-    redis_client = redis_cls.from_url(redis_url)
+    redis_client = redis_cls.from_url(redis_settings.url)
     return RedisJobStore(
         redis_client,
         prefix=prefix,

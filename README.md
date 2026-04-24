@@ -105,7 +105,7 @@ OpenAPI Schema: http://localhost:8080/openapi.json
 
 ### Production (Docker Compose)
 
-PyTorch 2.10+ automatically detects CPU/GPU at runtime. Use profiles to select worker type:
+PyTorch 2.10+ automatically detects CPU/GPU at runtime. External Redis is the default. Local Redis is auth-enabled and intended only for dev/test scenarios. Use profiles to select worker type:
 
 #### CPU workers (development/test)
 
@@ -125,6 +125,12 @@ docker compose -f tools/runtime/docker-compose.yml --profile gpu up --build
 
 ```bash
 docker compose -f tools/runtime/docker-compose.yml --profile cpu --profile gpu up --build
+```
+
+Local Redis for dev/tests only (auth-enabled):
+
+```bash
+docker compose -f tools/runtime/docker-compose.yml --profile redis-auth --profile cpu up --build
 ```
 
 ### Monitoring Stack (optional)
@@ -148,6 +154,10 @@ Worker metrics exposure changes monitoring behavior:
 - New `pms-worker-cpu` / `pms-worker-gpu` targets scrape Celery worker process metrics.
 - Dashboards now read real execution metrics (`started/finished/failed/inflight/duration`) from worker targets instead of showing partial or zero values from API-only scraping.
 
+Runtime hygiene:
+
+- Keep `PROMETHEUS_MULTIPROC_DIR` outside the repository (for example `/tmp/pms-prom-worker`) to avoid generating `*.db` metric shard files in git status.
+
 ## Configuration
 
 Configuration priority (highest to lowest):
@@ -161,10 +171,17 @@ Configuration priority (highest to lowest):
 |----------|---------|-------------|
 | `JOB_STORE_BACKEND` | `redis` | Job storage: `redis` or `memory` |
 | `IMAGE_BASE_DIR` | `.` | Base directory for image file access; image paths and temp compare files must stay under this directory |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis connection |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Shared Redis URL for API, Celery, and JobStore; wins over split vars |
+| `REDIS_HOST` | `127.0.0.1` | Shared Redis host when `REDIS_URL` is empty |
+| `REDIS_PORT` | `6379` | Shared Redis port when `REDIS_URL` is empty |
+| `REDIS_DB` | `0` | Shared Redis database index when `REDIS_URL` is empty |
+| `REDIS_USERNAME` | empty | Optional shared Redis username |
+| `REDIS_PASSWORD` | empty | Optional shared Redis password; masked in logs |
+| `REDIS_TLS` | `false` | Use `rediss://` when split vars mode is active |
+| `REDIS_STARTUP_CHECK_MODE` | `ping` | Redis startup validation mode: `ping`, `rw`, or `none` |
 | `COMPARE_TMP_DIR` | `.compare_tmp` | Directory for temporary uploaded images during job execution (resolved under `IMAGE_BASE_DIR`) |
-| `CELERY_BROKER_URL` | `redis://127.0.0.1:6379/0` | Celery broker URL |
-| `CELERY_RESULT_BACKEND` | `redis://127.0.0.1:6379/0` | Celery result backend |
+| `CELERY_BROKER_URL` | shared Redis URL | Explicit Celery broker URL override |
+| `CELERY_RESULT_BACKEND` | broker/shared Redis URL | Explicit Celery result backend override |
 | `COMPARE_QUEUE_CPU` | `compare-cpu` | CPU worker queue name |
 | `COMPARE_QUEUE_GPU` | `compare-gpu` | GPU worker queue name |
 | `ENABLE_GPU_QUEUE` | `false` | Enable GPU queue |
@@ -173,7 +190,45 @@ Configuration priority (highest to lowest):
 | `PROMETHEUS_WORKER_ENABLED` | `false` | Enables `/metrics` HTTP server inside Celery worker process; required to collect worker-side job execution metrics |
 | `PROMETHEUS_WORKER_ADDR` | `0.0.0.0` | Bind address for worker metrics server (change if metrics must be localhost-only or restricted network scope) |
 | `PROMETHEUS_WORKER_PORT` | `9101` | Port exposed by a worker for Prometheus scraping; each worker service must use a unique port |
-| `PROMETHEUS_MULTIPROC_DIR` | (empty) | When set, enables prometheus-client multiprocess aggregation for prefork workers and stores shard files in this directory |
+| `PROMETHEUS_MULTIPROC_DIR` | `/tmp/pms-prom-worker` | Enables prometheus-client multiprocess aggregation for prefork workers; keep this directory outside the repository |
+
+### Redis Configuration Modes
+
+Redis configuration is resolved in this order:
+
+1. `REDIS_URL`
+2. Split vars: `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`
+3. Code defaults
+
+Examples:
+
+```env
+# URL mode
+REDIS_URL=rediss://svc-user:svc-password@redis.example.com:6380/0
+
+# Split vars mode
+REDIS_URL=
+REDIS_HOST=redis.example.com
+REDIS_PORT=6380
+REDIS_DB=0
+REDIS_USERNAME=svc-user
+REDIS_PASSWORD=svc-password
+REDIS_TLS=true
+```
+
+Startup is fail-fast when `JOB_STORE_BACKEND=redis`: invalid Redis config or an unsuccessful startup validation raises a `RuntimeError` before the API serves requests.
+
+`REDIS_STARTUP_CHECK_MODE` controls startup behavior:
+
+- `ping` (default): validates by executing Redis `PING`.
+- `rw`: validates by writing/reading/deleting a short-lived probe key under `REDIS_PREFIX`.
+- `none`: skips startup validation (not recommended except controlled environments).
+
+Security notes:
+
+- Startup logs expose only sanitized Redis fields such as source, TLS enabled, and whether credentials are configured.
+- Passwords are masked in URLs before logging.
+- Error messages name the invalid environment variable without echoing the secret value.
 
 ### Worker Sizing (DevOps Guide)
 
@@ -261,6 +316,15 @@ Prometheus metrics exposed at `/metrics`:
 ```bash
 pytest -q
 ```
+
+Redis auth integration tests are intentionally separate from the default suite.
+
+```bash
+RUN_REDIS_INTEGRATION=1 PMS_REDIS_AUTH_URL='redis://:pms-secret@127.0.0.1:6380/0' \
+pytest -q -m redis_integration tests/test_redis_auth_integration.py
+```
+
+Local setup instructions are documented in `docs/testing-integration.md`.
 
 ### HMAC authentication (optional)
 
@@ -384,6 +448,7 @@ make full-check
 ## Documentation
 
 - Architecture details: `docs/architecture-celery-redis.md`
+- Integration testing guide: `docs/testing-integration.md`
 - Hardening roadmap (stage 1/2): `docs/hardening-roadmap.md`
 - Runtime compose config: `tools/runtime/docker-compose.yml`
 - Monitoring compose config: `tools/monitoring/docker-compose.yml`
