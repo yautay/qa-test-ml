@@ -2,7 +2,7 @@
 type: debt
 priority: high
 created: 2026-04-24T15:35:22Z
-status: implemented
+status: reviewed
 tags: [redis, job-store, retention, maxmemory, runtime, observability, prometheus]
 keywords: [maxmemory, RedisJobStore, MemoryJobStore, JobStore, JOB_RETENTION_SEC, expired, retention, cleanup, compare jobs, HTTP 410, prometheus]
 patterns: [ttl-based retention, backend parity between memory and redis, expired-job API contract, stale index pruning, runtime cleanup scheduling, structured logging by outcome, prometheus cleanup instrumentation, safe backward-compatible retention rollout]
