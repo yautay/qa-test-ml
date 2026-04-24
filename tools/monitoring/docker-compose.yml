@@ -33,7 +33,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      REDIS_ADDR: redis://host.docker.internal:6379
+      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis://redis.example.com:6379}
       # External Redis examples:
       # REDIS_ADDR: rediss://redis.example.com:6380
       # REDIS_USER: svc-user

@@ -32,7 +32,7 @@ pip install -r requirements-dev.txt
 
 uvicorn app.main:app --reload
 
-## Uruchomienie stacka Celery + Redis (docker compose)
+## Uruchomienie stacka Celery + external Redis (docker compose)
 
 Przygotuj env:
 
@@ -51,6 +51,11 @@ Wymaga `nvidia-container-toolkit`:
 ```bash
 # Uruchom z profilem gpu:
 docker compose -f tools/runtime/docker-compose.yml --profile gpu up --build
+```
+
+Local Redis (tylko auth, dev/test):
+```bash
+docker compose -f tools/runtime/docker-compose.yml --profile redis-auth --profile cpu up --build
 ```
 
 Monitoring (Prometheus + Grafana + redis exporter):

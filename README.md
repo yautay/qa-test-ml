@@ -99,7 +99,7 @@ OpenAPI Schema: http://localhost:8080/openapi.json
 
 ### Production (Docker Compose)
 
-PyTorch 2.10+ automatically detects CPU/GPU at runtime. Use profiles to select worker type:
+PyTorch 2.10+ automatically detects CPU/GPU at runtime. External Redis is the default. Local Redis is auth-enabled and intended only for dev/test scenarios. Use profiles to select worker type:
 
 #### CPU workers (development/test)
 
@@ -119,6 +119,12 @@ docker compose -f tools/runtime/docker-compose.yml --profile gpu up --build
 
 ```bash
 docker compose -f tools/runtime/docker-compose.yml --profile cpu --profile gpu up --build
+```
+
+Local Redis for dev/tests only (auth-enabled):
+
+```bash
+docker compose -f tools/runtime/docker-compose.yml --profile redis-auth --profile cpu up --build
 ```
 
 ### Monitoring Stack (optional)
