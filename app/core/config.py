@@ -10,7 +10,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore[no-redef]
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}

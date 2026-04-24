@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import threading
 import time
-from uuid import uuid4
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
+from uuid import uuid4
 
 from loguru import logger
 
@@ -24,7 +24,6 @@ except ImportError:  # pragma: no cover
 
 from app.core.config import get_int, get_redis_connection_settings, get_str
 from app.schemas.compare import JobMetricName, JobStatusName
-
 
 _REDIS_STARTUP_CHECK_ALLOWED_MODES = {"ping", "rw", "none"}
 

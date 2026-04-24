@@ -119,7 +119,7 @@ def _worker_ready_prometheus(**_: object) -> None:
         return
 
     port = get_int("PROMETHEUS_WORKER_PORT", 9101)
-    addr = get_str("PROMETHEUS_WORKER_ADDR", "0.0.0.0").strip() or "0.0.0.0"
+    addr = get_str("PROMETHEUS_WORKER_ADDR", "0.0.0.0").strip() or "0.0.0.0"  # nosec B104
 
     registry = _prometheus_registry()
     start_http_server(port, addr=addr, registry=registry)
