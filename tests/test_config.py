@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core import build_info
 from app.core import config as app_config
@@ -193,9 +194,10 @@ JOB_STORE_BACKEND = "memory"
     monkeypatch.setenv("APP_CONFIG_FILE", str(cfg))
 
     app = create_app()
-    job_store = app.state.job_store
+    assert app.state.job_store is None
 
-    assert job_store is not None
+    with TestClient(app):
+        assert app.state.job_store is not None
 
 
 def test_create_app_with_memory_job_store_backend(monkeypatch: pytest.MonkeyPatch, tmp_path):
@@ -210,9 +212,10 @@ JOB_STORE_BACKEND = "memory"
     monkeypatch.setenv("APP_CONFIG_FILE", str(cfg))
 
     app = create_app()
-    job_store = app.state.job_store
+    assert app.state.job_store is None
 
-    assert job_store is not None
+    with TestClient(app):
+        assert app.state.job_store is not None
 
 
 def test_create_app_with_redis_job_store_backend(monkeypatch: pytest.MonkeyPatch, tmp_path):
@@ -228,9 +231,7 @@ REDIS_URL = "redis://127.0.0.1:6379/0"
     monkeypatch.setenv("APP_CONFIG_FILE", str(cfg))
 
     app = create_app()
-    job_store = app.state.job_store
-
-    assert job_store is not None
+    assert app.state.job_store is None
 
 
 def test_git_metadata_uses_env_overrides(monkeypatch: pytest.MonkeyPatch):

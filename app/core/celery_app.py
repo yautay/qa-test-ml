@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from celery import Celery
 from celery.signals import worker_init, worker_process_shutdown, worker_ready
@@ -42,7 +43,27 @@ def create_celery_app() -> Celery:
     return app
 
 
-celery_app = create_celery_app()
+class _LazyCeleryApp:
+    def __init__(self) -> None:
+        self._app: Celery | None = None
+
+    def _get_app(self) -> Celery:
+        if self._app is None:
+            self._app = create_celery_app()
+        return self._app
+
+    def clear(self) -> None:
+        self._app = None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._get_app(), name)
+
+
+celery_app = _LazyCeleryApp()
+
+
+def _clear_celery_app_cache() -> None:
+    celery_app.clear()
 
 
 def _prometheus_enabled() -> bool:

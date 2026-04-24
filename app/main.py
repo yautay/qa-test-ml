@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -41,27 +43,14 @@ def _redis_startup_settings(backend: str) -> dict[str, object]:
 def create_app() -> FastAPI:
     configure_logging()
     validate_hmac_settings()
-    app = FastAPI(
-        title="Perceptual Metrics Service",
-        version="1.0.0",
-        description=(
-            "API for LPIPS/DISTS image similarity scoring and LPIPS heatmap generation. "
-            "Supports asynchronous comparison jobs API."
-        ),
-        openapi_tags=[
-            {"name": "health", "description": "Service health and readiness."},
-            {"name": "compare", "description": "Image comparison endpoints."},
-        ],
-    )
+    debug = get_bool("API_DEBUG", default=True)
 
-    app.include_router(health_router)
-    app.include_router(compare_router)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        job_store_backend = _read_runtime_settings()
+        store = get_job_store()
+        app.state.job_store = store
 
-    job_store_backend = _read_runtime_settings()
-    app.state.job_store = get_job_store()
-
-    @app.on_event("startup")
-    async def _startup() -> None:
         settings = {
             "api_debug": debug,
             "job_store_backend": job_store_backend,
@@ -82,10 +71,32 @@ def create_app() -> FastAPI:
             "git": get_git_metadata().as_dict(),
         }
 
-        validate_redis_job_store_startup(app.state.job_store)
+        validate_redis_job_store_startup(store)
         logger.info("Application startup settings: {}", settings)
 
-    debug = get_bool("API_DEBUG", default=True)
+        try:
+            yield
+        finally:
+            app.state.job_store = None
+
+    app = FastAPI(
+        title="Perceptual Metrics Service",
+        version="1.0.0",
+        description=(
+            "API for LPIPS/DISTS image similarity scoring and LPIPS heatmap generation. "
+            "Supports asynchronous comparison jobs API."
+        ),
+        openapi_tags=[
+            {"name": "health", "description": "Service health and readiness."},
+            {"name": "compare", "description": "Image comparison endpoints."},
+        ],
+        lifespan=lifespan,
+    )
+
+    app.state.job_store = None
+
+    app.include_router(health_router)
+    app.include_router(compare_router)
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:

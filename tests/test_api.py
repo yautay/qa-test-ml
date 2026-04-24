@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.core import config as app_config
 from app.core import job_store as job_store_module
+from app.core.job_store import MemoryJobStore
 
 
 @pytest.fixture(autouse=True)
@@ -20,10 +22,11 @@ def _runtime(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture()
-def client() -> TestClient:
+def client() -> Iterator[TestClient]:
     from app.main import app
 
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_health(client: TestClient):
@@ -70,14 +73,37 @@ def test_startup_fails_fast_when_redis_ping_is_unavailable(monkeypatch: pytest.M
             return _FakeRedisClient()
 
     monkeypatch.setenv("JOB_STORE_BACKEND", "redis")
-    monkeypatch.setenv("REDIS_URL", "redis://redis.example:6379/0")
+    monkeypatch.setenv("REDIS_URL", "redis://svc-user:svc-pass@redis.example:6379/0")
     monkeypatch.setattr(job_store_module, "redis_lib", SimpleNamespace(Redis=_FakeRedis))
     monkeypatch.setattr(job_store_module, "_HAS_REDIS", True)
     app_config._clear_config_cache()
     job_store_module._clear_job_store_cache()
 
-    with pytest.raises(RuntimeError, match="ping returned unavailable"), TestClient(create_app()):
+    with pytest.raises(RuntimeError, match="ping returned unavailable") as exc_info, TestClient(create_app()):
         pass
+
+    assert "svc-pass" not in str(exc_info.value)
+
+
+def test_create_app_defers_job_store_initialization_until_lifespan(monkeypatch: pytest.MonkeyPatch):
+    from app import main as main_module
+
+    called = False
+
+    def _fake_get_job_store() -> MemoryJobStore:
+        nonlocal called
+        called = True
+        return MemoryJobStore()
+
+    monkeypatch.setattr(main_module, "get_job_store", _fake_get_job_store)
+
+    app = main_module.create_app()
+
+    assert called is False
+    assert app.state.job_store is None
+
+    with TestClient(app):
+        assert called is True
 
 
 def test_startup_succeeds_when_redis_ping_is_available(monkeypatch: pytest.MonkeyPatch):
