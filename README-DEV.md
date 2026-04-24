@@ -99,7 +99,8 @@ COMPARE_TMP_DIR=.compare_tmp
 Konfiguracja Redis:
 
 - Priorytet: `REDIS_URL` > split vars (`REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`) > domyślne wartości w kodzie.
-- Jeśli `JOB_STORE_BACKEND=redis`, aplikacja wykona startup ping do Redis i zakończy start błędem przy niepoprawnej konfiguracji lub niedostępnym Redis.
+- `REDIS_STARTUP_CHECK_MODE`: `ping` (domyślnie), `rw` (probe SET/GET/DEL pod `REDIS_PREFIX`), `none` (pomija check; używać ostrożnie).
+- Jeśli `JOB_STORE_BACKEND=redis`, aplikacja wykona startup check Redis i zakończy start błędem przy niepoprawnej konfiguracji lub niedostępnym Redis.
 - Logi startupowe pokazują tylko zamaskowany URL i flagi `*_configured`, bez jawnego hasła.
 
 Przykłady:

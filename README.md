@@ -162,6 +162,7 @@ Configuration priority (highest to lowest):
 | `REDIS_USERNAME` | empty | Optional shared Redis username |
 | `REDIS_PASSWORD` | empty | Optional shared Redis password; masked in logs |
 | `REDIS_TLS` | `false` | Use `rediss://` when split vars mode is active |
+| `REDIS_STARTUP_CHECK_MODE` | `ping` | Redis startup validation mode: `ping`, `rw`, or `none` |
 | `COMPARE_TMP_DIR` | `.compare_tmp` | Directory for temporary uploaded images during job execution (resolved under `IMAGE_BASE_DIR`) |
 | `CELERY_BROKER_URL` | shared Redis URL | Explicit Celery broker URL override |
 | `CELERY_RESULT_BACKEND` | broker/shared Redis URL | Explicit Celery result backend override |
@@ -199,7 +200,13 @@ REDIS_PASSWORD=svc-password
 REDIS_TLS=true
 ```
 
-Startup is fail-fast when `JOB_STORE_BACKEND=redis`: invalid Redis config or an unsuccessful startup ping raises a `RuntimeError` before the API serves requests.
+Startup is fail-fast when `JOB_STORE_BACKEND=redis`: invalid Redis config or an unsuccessful startup validation raises a `RuntimeError` before the API serves requests.
+
+`REDIS_STARTUP_CHECK_MODE` controls startup behavior:
+
+- `ping` (default): validates by executing Redis `PING`.
+- `rw`: validates by writing/reading/deleting a short-lived probe key under `REDIS_PREFIX`.
+- `none`: skips startup validation (not recommended except controlled environments).
 
 Security notes:
 

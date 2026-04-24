@@ -11,7 +11,7 @@ from app.api.routes.health import router as health_router
 from app.core.build_info import get_git_metadata
 from app.core.config import get_bool, get_int, get_redis_connection_settings, get_str, mask_redis_url
 from app.core.hmac_auth import validate_hmac_settings
-from app.core.job_store import get_job_store, validate_redis_job_store_startup
+from app.core.job_store import get_job_store, get_redis_startup_check_mode, validate_redis_job_store_startup
 from app.core.logging import configure_logging
 
 
@@ -28,6 +28,7 @@ def _redis_startup_settings(backend: str) -> dict[str, object]:
             "redis_username_configured": False,
             "redis_password_configured": False,
             "redis_url_masked": None,
+            "redis_startup_check_mode": None,
         }
 
     redis_settings = get_redis_connection_settings()
@@ -37,6 +38,7 @@ def _redis_startup_settings(backend: str) -> dict[str, object]:
         "redis_username_configured": redis_settings.username_configured,
         "redis_password_configured": redis_settings.password_configured,
         "redis_url_masked": mask_redis_url(redis_settings.url),
+        "redis_startup_check_mode": get_redis_startup_check_mode(),
     }
 
 
