@@ -211,7 +211,7 @@ class RedisJobStore(JobStore):
         keys = [self._job_key(job_id) for job_id in normalized_ids]
         rows = self._redis.mget(keys)
 
-        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows) if row is None]
+        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows, strict=False) if row is None]
         if stale_ids:
             self._redis.zrem(index_key, *stale_ids)
 

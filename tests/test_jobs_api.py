@@ -443,9 +443,7 @@ def test_hmac_enabled_rejects_missing_headers(monkeypatch: pytest.MonkeyPatch, c
     assert response.status_code == 401
 
 
-def test_hmac_enabled_accepts_valid_signed_create_job(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient
-):
+def test_hmac_enabled_accepts_valid_signed_create_job(monkeypatch: pytest.MonkeyPatch, client: TestClient):
     _install_dummy_metrics(monkeypatch)
     monkeypatch.setenv("HMAC_ENABLED", "true")
     monkeypatch.setenv("HMAC_SECRET", "secret-123")

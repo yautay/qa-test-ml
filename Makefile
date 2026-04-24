@@ -1,4 +1,4 @@
-.PHONY: help install install-dev test lint format type audit deps freeze clean full-check coverage coverage-report
+.PHONY: help install install-dev test lint format type audit security deps freeze clean full-check coverage coverage-report
 
 help:
 	@echo "Available commands:"
@@ -8,7 +8,8 @@ help:
 	@echo "  make lint              - run ruff"
 	@echo "  make format            - format with black"
 	@echo "  make type              - run mypy"
-	@echo "  make audit             - run pip-audit"
+	@echo "  make audit             - run pip-audit (dependency vulnerabilities)"
+	@echo "  make security          - run bandit (static security analysis)"
 	@echo "  make deps              - run pipdeptree"
 	@echo "  make freeze            - save lock file"
 	@echo "  make full-check        - full check before commit"
@@ -37,6 +38,9 @@ type:
 audit:
 	pip-audit
 
+security:
+	bandit -r app/ -ll
+
 deps:
 	pipdeptree
 
@@ -44,7 +48,7 @@ freeze:
 	pip freeze > requirements.lock.txt
 
 full-check:
-	pytest -q && ruff check . && mypy . && pip-audit && pre-commit run --all-files
+	pytest -q && ruff check . && mypy . && pip-audit && bandit -r app/ -ll && pre-commit run --all-files
 
 coverage:
 	pytest --cov=app --cov-report=term-missing

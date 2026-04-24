@@ -47,8 +47,7 @@ def _store_temp_image(content: bytes, original_name: str) -> str:
         base_dir = resolve_input_path(configured_tmp_dir)
     except PermissionError as exc:
         raise RuntimeError(
-            "COMPARE_TMP_DIR must point inside IMAGE_BASE_DIR "
-            f"(got: {configured_tmp_dir!r})"
+            "COMPARE_TMP_DIR must point inside IMAGE_BASE_DIR " f"(got: {configured_tmp_dir!r})"
         ) from exc
     os.makedirs(base_dir, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix="compare_job_", suffix=suffix, dir=base_dir)

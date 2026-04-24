@@ -1,5 +1,11 @@
 # Perceptual Metrics Service
 
+<!-- CI status badges — replace <owner> / <namespace> / <workspace> with your actual account names -->
+[![GitHub CI](https://github.com/<owner>/qa-test-pms/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/qa-test-pms/actions/workflows/ci.yml)
+[![GitLab CI](https://gitlab.com/<namespace>/qa-test-pms/badges/main/pipeline.svg)](https://gitlab.com/<namespace>/qa-test-pms/-/pipelines)
+[![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/<workspace>/qa-test-pms/main?label=bitbucket%20ci)](https://bitbucket.org/<workspace>/qa-test-pms/addon/pipelines/home)
+[![Jenkins](https://jenkins.example.com/buildStatus/icon?job=qa-test-pms)](https://jenkins.example.com/job/qa-test-pms/)
+
 FastAPI service for perceptual similarity metrics ( comparing two images usingLPIPS, DISTS), with optional difference heatmaps.
 
 ## API Documentation
@@ -346,7 +352,11 @@ mypy .
 ### Security Audit
 
 ```bash
+# dependency vulnerability scan
 pip-audit
+
+# static security analysis of source code
+make security   # runs: bandit -r app/ -ll
 ```
 
 ### Full Check (before commit)
