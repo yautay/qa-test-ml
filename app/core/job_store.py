@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover
     _HAS_REDIS = False
 
 from app.core.config import get_int, get_redis_connection_settings, get_str
+from app.core.metrics import retention_cleanup_failures_total, retention_cleanup_total
 from app.schemas.compare import JobMetricName, JobStatusName
 
 _REDIS_STARTUP_CHECK_ALLOWED_MODES = {"ping", "rw", "none"}
@@ -31,9 +32,7 @@ _REDIS_STARTUP_CHECK_ALLOWED_MODES = {"ping", "rw", "none"}
 def get_redis_startup_check_mode() -> str:
     mode = get_str("REDIS_STARTUP_CHECK_MODE", "ping").strip().lower() or "ping"
     if mode not in _REDIS_STARTUP_CHECK_ALLOWED_MODES:
-        raise RuntimeError(
-            "REDIS_STARTUP_CHECK_MODE must be one of: ping, rw, none"
-        )
+        raise RuntimeError("REDIS_STARTUP_CHECK_MODE must be one of: ping, rw, none")
     return mode
 
 
@@ -113,6 +112,9 @@ class JobStore:
     def get_heatmap(self, job_id: str) -> bytes | None:
         raise NotImplementedError
 
+    def is_job_expired(self, job_id: str) -> bool:
+        raise NotImplementedError
+
     def is_available(self) -> bool:
         raise NotImplementedError
 
@@ -120,28 +122,117 @@ class JobStore:
 class MemoryJobStore(JobStore):
     backend_name = "memory"
 
-    def __init__(self):
+    def __init__(self, *, retention_sec: int = 86400, tombstone_retention_sec: int | None = None):
+        self._retention_sec = max(0, retention_sec)
+        self._retention_ms = self._retention_sec * 1000
+        tombstone_sec = self._retention_sec if tombstone_retention_sec is None else tombstone_retention_sec
+        self._tombstone_retention_sec = max(0, tombstone_sec)
+        self._tombstone_retention_ms = self._tombstone_retention_sec * 1000
         self._jobs: dict[str, JobState] = {}
         self._heatmaps: dict[str, bytes] = {}
+        self._expires_at_ms: dict[str, int] = {}
+        self._tombstones: dict[str, int] = {}
         self._lock = threading.Lock()
+
+    def _record_tombstone_locked(self, job_id: str, *, now: int) -> None:
+        if self._tombstone_retention_ms <= 0:
+            return
+        self._tombstones[job_id] = now + self._tombstone_retention_ms
+
+    def _prune_tombstones_locked(self, *, now: int) -> None:
+        if not self._tombstones:
+            return
+        stale_job_ids = [job_id for job_id, tombstone_expiry in self._tombstones.items() if tombstone_expiry <= now]
+        for job_id in stale_job_ids:
+            self._tombstones.pop(job_id, None)
+        if stale_job_ids:
+            retention_cleanup_total.labels(
+                backend=self.backend_name,
+                artifact="tombstone",
+                outcome="pruned",
+            ).inc(len(stale_job_ids))
+
+    def _prune_expired_jobs_locked(self, *, now: int, job_id: str | None = None) -> None:
+        if self._retention_ms <= 0 or not self._expires_at_ms:
+            return
+
+        if job_id is None:
+            candidate_ids = list(self._expires_at_ms.keys())
+        elif job_id in self._expires_at_ms:
+            candidate_ids = [job_id]
+        else:
+            candidate_ids = []
+
+        for candidate_id in candidate_ids:
+            expires_at = self._expires_at_ms.get(candidate_id)
+            if expires_at is None or expires_at > now:
+                continue
+            job_existed = self._jobs.pop(candidate_id, None) is not None
+            heatmap_existed = self._heatmaps.pop(candidate_id, None) is not None
+            self._expires_at_ms.pop(candidate_id, None)
+            self._record_tombstone_locked(candidate_id, now=now)
+            if job_existed:
+                retention_cleanup_total.labels(
+                    backend=self.backend_name,
+                    artifact="job_state",
+                    outcome="expired",
+                ).inc()
+            if heatmap_existed:
+                retention_cleanup_total.labels(
+                    backend=self.backend_name,
+                    artifact="heatmap",
+                    outcome="expired",
+                ).inc()
+            logger.bind(
+                class_name="MemoryJobStore",
+                method_name="_prune_expired_jobs_locked",
+                backend=self.backend_name,
+                job_id=candidate_id,
+                action="expire",
+                outcome="removed",
+            ).debug("Expired in-memory job state was pruned")
+
+    def _prune_locked(self, *, job_id: str | None = None) -> None:
+        try:
+            now = now_ms()
+            self._prune_expired_jobs_locked(now=now, job_id=job_id)
+            self._prune_tombstones_locked(now=now)
+        except Exception as exc:
+            retention_cleanup_failures_total.labels(backend=self.backend_name, action="lazy_prune").inc()
+            logger.bind(
+                class_name="MemoryJobStore",
+                method_name="_prune_locked",
+                backend=self.backend_name,
+                job_id=job_id,
+                action="lazy_prune",
+                outcome="failure",
+            ).opt(exception=exc).warning("Memory retention cleanup failed")
+            raise
 
     def create_job(self, job: JobState) -> None:
         with self._lock:
+            self._prune_locked(job_id=job.job_id)
             if job.job_id in self._jobs:
                 raise ValueError(f"Job already exists: {job.job_id}")
             self._jobs[job.job_id] = job
+            self._tombstones.pop(job.job_id, None)
+            if self._retention_ms > 0:
+                self._expires_at_ms[job.job_id] = now_ms() + self._retention_ms
 
     def get_job(self, job_id: str) -> JobState | None:
         with self._lock:
+            self._prune_locked(job_id=job_id)
             return self._jobs.get(job_id)
 
     def list_jobs(self) -> list[JobState]:
         with self._lock:
+            self._prune_locked()
             values = list(self._jobs.values())
         return sorted(values, key=lambda item: item.created_at_ms)
 
     def update_job(self, job_id: str, **fields: object) -> JobState:
         with self._lock:
+            self._prune_locked(job_id=job_id)
             job = self._jobs[job_id]
             for key, value in fields.items():
                 setattr(job, key, value)
@@ -149,13 +240,20 @@ class MemoryJobStore(JobStore):
 
     def set_heatmap(self, job_id: str, heatmap_png: bytes) -> None:
         with self._lock:
+            self._prune_locked(job_id=job_id)
             self._heatmaps[job_id] = heatmap_png
             if job_id in self._jobs:
                 self._jobs[job_id].has_heatmap = True
 
     def get_heatmap(self, job_id: str) -> bytes | None:
         with self._lock:
+            self._prune_locked(job_id=job_id)
             return self._heatmaps.get(job_id)
+
+    def is_job_expired(self, job_id: str) -> bool:
+        with self._lock:
+            self._prune_locked(job_id=job_id)
+            return job_id in self._tombstones
 
     def is_available(self) -> bool:
         return True
@@ -169,13 +267,14 @@ class RedisJobStore(JobStore):
         redis_client: Any,
         *,
         prefix: str,
-        job_ttl_sec: int,
-        heatmap_ttl_sec: int,
+        retention_sec: int,
+        tombstone_retention_sec: int | None = None,
     ):
         self._redis = redis_client
         self._prefix = prefix
-        self._job_ttl_sec = max(0, job_ttl_sec)
-        self._heatmap_ttl_sec = max(0, heatmap_ttl_sec)
+        self._retention_sec = max(0, retention_sec)
+        tombstone_sec = self._retention_sec if tombstone_retention_sec is None else tombstone_retention_sec
+        self._tombstone_retention_sec = max(0, tombstone_sec)
 
     def _job_key(self, job_id: str) -> str:
         return f"{self._prefix}:job:{job_id}"
@@ -183,16 +282,23 @@ class RedisJobStore(JobStore):
     def _heatmap_key(self, job_id: str) -> str:
         return f"{self._prefix}:job:{job_id}:heatmap"
 
+    def _tombstone_key(self, job_id: str) -> str:
+        return f"{self._prefix}:job:{job_id}:expired"
+
     def _jobs_index_key(self) -> str:
         return f"{self._prefix}:jobs:index"
 
     def create_job(self, job: JobState) -> None:
         key = self._job_key(job.job_id)
         payload = json.dumps(job.to_dict())
-        created = self._redis.set(key, payload, nx=True, ex=self._job_ttl_sec or None)
+        created = self._redis.set(key, payload, nx=True, ex=self._retention_sec or None)
         if not created:
             raise ValueError(f"Job already exists: {job.job_id}")
         self._redis.zadd(self._jobs_index_key(), {job.job_id: float(job.created_at_ms)})
+        if self._tombstone_retention_sec > 0:
+            self._redis.set(
+                self._tombstone_key(job.job_id), "1", ex=self._retention_sec + self._tombstone_retention_sec
+            )
 
     def _parse_jobs(self, rows: Iterable[bytes | str]) -> list[JobState]:
         out: list[JobState] = []
@@ -215,20 +321,44 @@ class RedisJobStore(JobStore):
 
     def list_jobs(self) -> list[JobState]:
         index_key = self._jobs_index_key()
-        ids = self._redis.zrange(index_key, 0, -1)
-        if not ids:
-            return []
+        try:
+            ids = self._redis.zrange(index_key, 0, -1)
+            if not ids:
+                return []
 
-        normalized_ids = [job_id.decode("utf-8") if isinstance(job_id, bytes) else str(job_id) for job_id in ids]
-        keys = [self._job_key(job_id) for job_id in normalized_ids]
-        rows = self._redis.mget(keys)
+            normalized_ids = [job_id.decode("utf-8") if isinstance(job_id, bytes) else str(job_id) for job_id in ids]
+            keys = [self._job_key(job_id) for job_id in normalized_ids]
+            rows = self._redis.mget(keys)
 
-        stale_ids = [job_id for job_id, row in zip(normalized_ids, rows, strict=False) if row is None]
-        if stale_ids:
-            self._redis.zrem(index_key, *stale_ids)
+            stale_ids = [job_id for job_id, row in zip(normalized_ids, rows, strict=False) if row is None]
+            if stale_ids:
+                self._redis.zrem(index_key, *stale_ids)
+                retention_cleanup_total.labels(
+                    backend=self.backend_name,
+                    artifact="jobs_index",
+                    outcome="pruned",
+                ).inc(len(stale_ids))
+                logger.bind(
+                    class_name="RedisJobStore",
+                    method_name="list_jobs",
+                    backend=self.backend_name,
+                    action="stale_index_prune",
+                    outcome="removed",
+                    count=len(stale_ids),
+                ).debug("Pruned stale job index entries")
 
-        valid_rows = [row for row in rows if row is not None]
-        return self._parse_jobs(valid_rows)
+            valid_rows = [row for row in rows if row is not None]
+            return self._parse_jobs(valid_rows)
+        except Exception as exc:
+            retention_cleanup_failures_total.labels(backend=self.backend_name, action="list_jobs").inc()
+            logger.bind(
+                class_name="RedisJobStore",
+                method_name="list_jobs",
+                backend=self.backend_name,
+                action="stale_index_prune",
+                outcome="failure",
+            ).opt(exception=exc).warning("Redis retention cleanup failed during list_jobs")
+            raise
 
     def update_job(self, job_id: str, **fields: object) -> JobState:
         key = self._job_key(job_id)
@@ -244,7 +374,7 @@ class RedisJobStore(JobStore):
         payload = json.dumps(data)
 
         ttl = self._redis.ttl(key)
-        ex = ttl if ttl > 0 else (self._job_ttl_sec or None)
+        ex = ttl if ttl > 0 else (self._retention_sec or None)
         self._redis.set(key, payload, ex=ex)
 
         updated = self.get_job(job_id)
@@ -253,12 +383,21 @@ class RedisJobStore(JobStore):
         return updated
 
     def set_heatmap(self, job_id: str, heatmap_png: bytes) -> None:
-        self._redis.set(self._heatmap_key(job_id), heatmap_png, ex=self._heatmap_ttl_sec or None)
+        job_ttl = self._redis.ttl(self._job_key(job_id))
+        ex = job_ttl if job_ttl > 0 else (self._retention_sec or None)
+        self._redis.set(self._heatmap_key(job_id), heatmap_png, ex=ex)
         self.update_job(job_id, has_heatmap=True)
 
     def get_heatmap(self, job_id: str) -> bytes | None:
         result = self._redis.get(self._heatmap_key(job_id))
         return cast(bytes | None, result)
+
+    def is_job_expired(self, job_id: str) -> bool:
+        if self._tombstone_retention_sec <= 0:
+            return False
+        if self._redis.exists(self._job_key(job_id)):
+            return False
+        return bool(self._redis.exists(self._tombstone_key(job_id)))
 
     def _rw_probe(self) -> None:
         probe_key = f"{self._prefix}:startup:probe:{uuid4().hex}"
@@ -342,13 +481,13 @@ def validate_redis_job_store_startup(store: JobStore) -> None:
 
 def create_job_store() -> JobStore:
     backend = get_str("JOB_STORE_BACKEND", "redis").strip().lower()
+    retention_sec = get_int("JOB_RETENTION_SEC", 86400)
+    tombstone_retention_sec = get_int("JOB_TOMBSTONE_RETENTION_SEC", retention_sec)
     if backend == "memory":
-        return MemoryJobStore()
+        return MemoryJobStore(retention_sec=retention_sec, tombstone_retention_sec=tombstone_retention_sec)
 
     redis_settings = get_redis_connection_settings()
     prefix = get_str("REDIS_PREFIX", "pms").strip() or "pms"
-    job_ttl_sec = get_int("JOB_TTL_SEC", 86400)
-    heatmap_ttl_sec = get_int("HEATMAP_TTL_SEC", 86400)
 
     if not _HAS_REDIS:
         raise RuntimeError("Redis backend selected but 'redis' package is not installed")
@@ -359,8 +498,8 @@ def create_job_store() -> JobStore:
     return RedisJobStore(
         redis_client,
         prefix=prefix,
-        job_ttl_sec=job_ttl_sec,
-        heatmap_ttl_sec=heatmap_ttl_sec,
+        retention_sec=retention_sec,
+        tombstone_retention_sec=tombstone_retention_sec,
     )
 
 

@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.core import config as app_config
 from app.core import hmac_auth as hmac_auth_module
 from app.core import job_store as job_store_module
+from app.core import metrics as app_metrics
 
 
 @pytest.fixture(autouse=True)
@@ -389,6 +390,73 @@ def test_error_endpoint_for_missing_job(client: TestClient):
     missing_job_id = str(uuid.uuid4())
     error_resp = client.get(f"/v1/compare/jobs/{missing_job_id}/error")
     assert error_resp.status_code == 404
+
+
+def test_known_expired_job_returns_410_for_status_heatmap_and_error(monkeypatch: pytest.MonkeyPatch):
+    from app.main import create_app
+
+    monkeypatch.setenv("JOB_RETENTION_SEC", "1")
+    monkeypatch.setenv("JOB_TOMBSTONE_RETENTION_SEC", "10")
+    app_config._clear_config_cache()
+    job_store_module._clear_job_store_cache()
+
+    job_id = str(uuid.uuid4())
+    status_before = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_status"
+    )._value.get()
+    heatmap_before = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_heatmap"
+    )._value.get()
+    error_before = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_error"
+    )._value.get()
+
+    app = create_app()
+    with TestClient(app) as local_client:
+        store = app.state.job_store
+        assert store is not None
+        store.create_job(
+            job_store_module.JobState(
+                job_id=job_id,
+                pair_id="pair-expired",
+                metric="lpips",
+                model="alex",
+                normalize=True,
+                img_a_name="a.png",
+                img_b_name="b.png",
+                status="queued",
+                created_at_ms=job_store_module.now_ms(),
+            )
+        )
+        time.sleep(1.2)
+
+        status_resp = local_client.get(f"/v1/compare/jobs/{job_id}")
+        assert status_resp.status_code == 410
+
+        heatmap_resp = local_client.get(f"/v1/compare/jobs/{job_id}/heatmap")
+        assert heatmap_resp.status_code == 410
+
+        error_resp = local_client.get(f"/v1/compare/jobs/{job_id}/error")
+        assert error_resp.status_code == 410
+
+    status_after = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_status"
+    )._value.get()
+    heatmap_after = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_heatmap"
+    )._value.get()
+    error_after = app_metrics.expired_job_reads_total.labels(
+        backend="memory", endpoint="get_compare_job_error"
+    )._value.get()
+    assert status_after - status_before == 1
+    assert heatmap_after - heatmap_before == 1
+    assert error_after - error_before == 1
+
+
+def test_status_endpoint_for_never_seen_job_returns_404(client: TestClient):
+    missing_job_id = str(uuid.uuid4())
+    status_resp = client.get(f"/v1/compare/jobs/{missing_job_id}")
+    assert status_resp.status_code == 404
 
 
 def test_heatmap_failure_marks_job_as_error(monkeypatch: pytest.MonkeyPatch, client: TestClient):

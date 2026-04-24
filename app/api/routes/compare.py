@@ -14,7 +14,7 @@ from app.core.config import get_bool, get_int, get_str
 from app.core.execution import queue_names, select_queue_for_job
 from app.core.hmac_auth import verify_hmac_request
 from app.core.job_store import JobState, now_ms
-from app.core.metrics import jobs_submitted_total, rejected_requests_total
+from app.core.metrics import expired_job_reads_total, jobs_submitted_total, rejected_requests_total
 from app.core.rate_limit import rate_limiter
 from app.schemas.compare import (
     ErrorResponse,
@@ -200,6 +200,18 @@ def _select_queue() -> str:
     return select_queue_for_job()
 
 
+def _raise_missing_or_expired_job(*, job_id: str, store: object, endpoint: str) -> None:
+    is_expired = getattr(store, "is_job_expired", None)
+    if callable(is_expired) and bool(is_expired(job_id)):
+        backend = str(getattr(store, "backend_name", "unknown"))
+        expired_job_reads_total.labels(backend=backend, endpoint=endpoint).inc()
+        logger.bind(class_name="CompareAPI", endpoint=endpoint, job_id=job_id, outcome="expired").info(
+            "Known expired job read attempt"
+        )
+        raise HTTPException(status_code=410, detail=f"Job expired: {job_id}")
+    raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+
 @router.post(
     "/v1/compare/jobs",
     response_model=JobAcceptedResponse,
@@ -379,6 +391,7 @@ async def create_compare_job(
     responses={
         200: {"description": "Job status"},
         404: {"model": ErrorResponse, "description": "Job not found"},
+        410: {"model": ErrorResponse, "description": "Job expired"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
@@ -389,7 +402,7 @@ async def get_compare_job_status(request: Request, job_id: str):
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        _raise_missing_or_expired_job(job_id=job_id, store=store, endpoint="get_compare_job_status")
     return _job_to_status_response(job, request)
 
 
@@ -423,6 +436,7 @@ async def list_compare_jobs(request: Request):
             "content": {"image/png": {}},
         },
         404: {"model": ErrorResponse, "description": "Job not found or heatmap unavailable"},
+        410: {"model": ErrorResponse, "description": "Job expired"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
     },
@@ -433,7 +447,7 @@ async def get_compare_job_heatmap(request: Request, job_id: str):
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        _raise_missing_or_expired_job(job_id=job_id, store=store, endpoint="get_compare_job_heatmap")
     if job.status != "done":
         raise HTTPException(status_code=404, detail=f"Heatmap not available for job: {job_id}")
     heatmap_png = store.get_heatmap(job_id)
@@ -451,6 +465,7 @@ async def get_compare_job_heatmap(request: Request, job_id: str):
     responses={
         200: {"description": "Job error details"},
         404: {"model": ErrorResponse, "description": "Job not found"},
+        410: {"model": ErrorResponse, "description": "Job expired"},
         409: {"model": ErrorResponse, "description": "Job is not in error state"},
         429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
         503: {"model": ErrorResponse, "description": "Job store unavailable"},
@@ -462,7 +477,7 @@ async def get_compare_job_error(request: Request, job_id: str):
     store = _get_job_store(request)
     job = store.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+        _raise_missing_or_expired_job(job_id=job_id, store=store, endpoint="get_compare_job_error")
     if job.status != "error":
         raise HTTPException(status_code=409, detail=f"Job is not in error state: {job_id}")
 

@@ -32,7 +32,7 @@ API_DEBUG = "0"
 LOG_API_ENABLED = true
 LOG_API_TIMEOUT_MS = 3500
 JOB_STORE_BACKEND = "memory"
-JOB_TTL_SEC = 120
+JOB_RETENTION_SEC = 120
 """.strip(),
         encoding="utf-8",
     )
@@ -42,7 +42,19 @@ JOB_TTL_SEC = 120
     assert app_config.get_bool("LOG_API_ENABLED", default=False) is True
     assert app_config.get_int("LOG_API_TIMEOUT_MS", 2000) == 3500
     assert app_config.get_str("JOB_STORE_BACKEND", "redis") == "memory"
-    assert app_config.get_int("JOB_TTL_SEC", 86400) == 120
+    assert app_config.get_int("JOB_RETENTION_SEC", 86400) == 120
+
+
+def test_create_job_store_uses_unified_job_retention_key(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("JOB_STORE_BACKEND", "memory")
+    monkeypatch.setenv("JOB_RETENTION_SEC", "7")
+    monkeypatch.setenv("JOB_TTL_SEC", "1")
+    monkeypatch.setenv("HEATMAP_TTL_SEC", "1")
+
+    store = app_job_store.create_job_store()
+
+    assert isinstance(store, app_job_store.MemoryJobStore)
+    assert store._retention_sec == 7
 
 
 def test_system_env_has_priority_over_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path):

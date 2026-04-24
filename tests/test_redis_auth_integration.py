@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 from urllib.parse import SplitResult, quote, unquote, urlsplit, urlunsplit
 
 import pytest
@@ -69,7 +70,7 @@ def _wait_terminal(client: TestClient, job_id: str) -> dict[str, object]:
         assert response.status_code == 200
         body = response.json()
         if body["status"] in {"done", "error"}:
-            return body
+            return cast(dict[str, object], body)
         time.sleep(0.05)
     raise AssertionError("job did not finish in time")
 
