@@ -31,3 +31,18 @@ rejected_requests_total = Counter(
     "Rejected API requests",
     ["endpoint", "reason", "status_code"],
 )
+retention_cleanup_total = Counter(
+    "pms_retention_cleanup_total",
+    "Retention cleanup operations",
+    ["backend", "artifact", "outcome"],
+)
+retention_cleanup_failures_total = Counter(
+    "pms_retention_cleanup_failures_total",
+    "Retention cleanup failures",
+    ["backend", "action"],
+)
+expired_job_reads_total = Counter(
+    "pms_expired_job_reads_total",
+    "Known-expired compare job read attempts",
+    ["backend", "endpoint"],
+)

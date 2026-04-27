@@ -27,8 +27,7 @@ REDIS_USERNAME = ""
 REDIS_PASSWORD = ""
 REDIS_TLS = false
 REDIS_PREFIX = "pms"
-JOB_TTL_SEC = 86400
-HEATMAP_TTL_SEC = 86400
+JOB_RETENTION_SEC = 86400
 
 CELERY_BROKER_URL = "" # leave empty to reuse shared Redis settings
 CELERY_RESULT_BACKEND = "" # leave empty to reuse broker/shared Redis
