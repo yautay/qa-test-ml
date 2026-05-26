@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.responses import Response
 
 from app.api.routes.compare import router as compare_router
@@ -59,15 +58,19 @@ def create_app() -> FastAPI:
             "hmac_allowed_skew_sec": get_int("HMAC_ALLOWED_SKEW_SEC", 300),
             "hmac_require_nonce": get_bool("HMAC_REQUIRE_NONCE", default=True),
             "hmac_nonce_ttl_sec": get_int("HMAC_NONCE_TTL_SEC", 300),
+            "prometheus_enabled": get_bool("PROMETHEUS_ENABLED", default=False),
             "git": get_git_metadata().as_dict(),
         }
         logger.info("Application startup settings: {}", settings)
 
     debug = get_bool("API_DEBUG", default=True)
 
-    @app.get("/metrics", include_in_schema=False)
-    async def metrics() -> Response:
-        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    if get_bool("PROMETHEUS_ENABLED", default=False):
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        @app.get("/metrics", include_in_schema=False)
+        async def metrics() -> Response:
+            return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     if debug:
 

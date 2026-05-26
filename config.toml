@@ -1,0 +1,2 @@
+[env]
+PROMETHEUS_ENABLED = "false"
