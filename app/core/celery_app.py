@@ -6,7 +6,6 @@ from urllib.parse import urlsplit
 
 from celery import Celery
 from celery.signals import worker_init, worker_process_shutdown, worker_ready
-from prometheus_client import REGISTRY, CollectorRegistry, multiprocess, start_http_server
 
 from app.core.config import get_bool, get_int, get_redis_connection_settings, get_str
 
@@ -88,7 +87,9 @@ def _prometheus_enabled() -> bool:
     return get_bool("PROMETHEUS_WORKER_ENABLED", default=False)
 
 
-def _prometheus_registry() -> CollectorRegistry:
+def _prometheus_registry() -> object:
+    from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
+
     multiproc_dir = get_str("PROMETHEUS_MULTIPROC_DIR", "").strip()
     if not multiproc_dir:
         return REGISTRY
@@ -121,6 +122,8 @@ def _worker_ready_prometheus(**_: object) -> None:
     port = get_int("PROMETHEUS_WORKER_PORT", 9101)
     addr = get_str("PROMETHEUS_WORKER_ADDR", "0.0.0.0").strip() or "0.0.0.0"  # nosec B104
 
+    from prometheus_client import start_http_server
+
     registry = _prometheus_registry()
     start_http_server(port, addr=addr, registry=registry)
 
@@ -135,5 +138,7 @@ def _worker_process_shutdown_prometheus(pid: int | None = None, **_: object) -> 
 
     if not get_str("PROMETHEUS_MULTIPROC_DIR", "").strip():
         return
+
+    from prometheus_client import multiprocess
 
     multiprocess.mark_process_dead(pid)
