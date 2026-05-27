@@ -4,7 +4,10 @@ import sys
 import threading
 from typing import Any
 
-import httpx
+import json
+import urllib.error
+import urllib.request
+
 from loguru import logger
 
 from app.core.build_info import get_git_metadata
@@ -64,9 +67,11 @@ class ApiLogSink:
         headers = self._headers()
 
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.post(self.url, json=payload, headers=headers)
-                response.raise_for_status()
+            body = json.dumps(payload).encode()
+            req = urllib.request.Request(self.url, data=body, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # noqa: S310
+                if resp.status >= 400:
+                    raise urllib.error.HTTPError(self.url, resp.status, resp.reason, {}, None)
             with self._lock:
                 self._error_count = 0
         except Exception:
