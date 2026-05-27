@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 from app.core.build_info import get_git_metadata
 from app.core.execution import execution_device_mode, gpu_queue_enabled, gpu_worker_available
-from app.core.registry import registry
+from app.core.metric_names import KNOWN_METRIC_NAMES
 
 router = APIRouter(tags=["health"])
 
@@ -53,7 +53,7 @@ def health(request: Request):
 
     return {
         "status": "ok",
-        "metrics": registry.list(),
+        "metrics": sorted(KNOWN_METRIC_NAMES),
         "job_store": {"backend": backend, "available": store_available},
         "git": get_git_metadata().as_dict(),
         "gpu": {
