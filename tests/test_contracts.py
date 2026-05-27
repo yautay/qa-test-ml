@@ -20,9 +20,8 @@ def _runtime(monkeypatch: pytest.MonkeyPatch):
 def test_contract_health_response_shape():
     from app.main import create_app
 
-    client = TestClient(create_app())
-
-    r = client.get("/health")
+    with TestClient(create_app()) as client:
+        r = client.get("/health")
 
     assert r.status_code == 200
     data = r.json()

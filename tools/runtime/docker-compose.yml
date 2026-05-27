@@ -12,15 +12,17 @@
 # Note: PyTorch 2.10+ auto-detects CPU/GPU at runtime
 
 services:
-  redis:
+  redis-auth:
     image: redis:7.2-alpine
-    container_name: pms-redis
+    container_name: pms-redis-auth
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "6380:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "pms-secret"]
     volumes:
-      - redis-data:/data
+      - redis-auth-data:/data
     mem_limit: 512m
+    profiles:
+      - redis-auth
 
   api:
     image: python:3.12-slim
@@ -39,8 +41,6 @@ services:
       git config --global --add safe.directory /workspace &&
       pip install --no-cache-dir -r requirements.txt &&
       uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers \${API_WORKERS:-1}"
-    depends_on:
-      - redis
     mem_limit: 64g
     cpus: 8
 
@@ -67,8 +67,6 @@ services:
       curl -o /root/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth https://download.pytorch.org/models/alexnet-owt-7be5be79.pth &&
       pip install --no-cache-dir -r requirements.txt &&
       celery -A app.core.celery_app:celery_app worker -Q ${COMPARE_QUEUE_CPU:-compare-cpu} --concurrency=${CELERY_CPU_CONCURRENCY:-1} --loglevel=${CELERY_LOG_LEVEL:-INFO}"
-    depends_on:
-      - redis
     mem_limit: 64g
     cpus: 8
     profiles:
@@ -97,8 +95,6 @@ services:
       curl -o /root/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth https://download.pytorch.org/models/alexnet-owt-7be5be79.pth &&
       python3 -m pip install --no-cache-dir -r requirements.txt &&
       python3 -m celery -A app.core.celery_app:celery_app worker -Q ${COMPARE_QUEUE_GPU:-compare-gpu} --concurrency=${CELERY_GPU_CONCURRENCY:-1} --loglevel=${CELERY_LOG_LEVEL:-INFO}"
-    depends_on:
-      - redis
     deploy:
       resources:
         reservations:
@@ -110,4 +106,12 @@ services:
       - gpu
 
 volumes:
-  redis-data:
+  redis-auth-data:
+
+# External Redis note:
+# - Set REDIS_URL=rediss://user:password@host:port/db or clear REDIS_URL and use
+#   REDIS_HOST/REDIS_PORT/REDIS_DB/REDIS_USERNAME/REDIS_PASSWORD/REDIS_TLS.
+# - Leave CELERY_BROKER_URL and CELERY_RESULT_BACKEND empty to share the same Redis.
+# - Local Redis is auth-enabled only for tests via profile `redis-auth`.
+#   Example: REDIS_URL=redis://:pms-secret@redis-auth:6379/0
+#   Example: PMS_REDIS_AUTH_URL=redis://:pms-secret@127.0.0.1:6380/0

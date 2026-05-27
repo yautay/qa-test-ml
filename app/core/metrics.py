@@ -15,18 +15,40 @@ def _prometheus_enabled() -> bool:
 # is never imported and callers don't need to change.
 # ---------------------------------------------------------------------------
 
+class _NoOpValue:
+    def __init__(self) -> None:
+        self._val: float = 0.0
+
+    def get(self) -> float:
+        return self._val
+
+    def inc(self, amount: float = 1.0) -> None:
+        self._val += amount
+
+    def set(self, value: float) -> None:
+        self._val = value
+
+
 class _NoOpMetric:
-    def labels(self, *_args: Any, **_kwargs: Any) -> "_NoOpMetric":
-        return self
+    def __init__(self) -> None:
+        self._value = _NoOpValue()
+        self._children: dict[tuple[Any, ...], "_NoOpMetric"] = {}
 
-    def inc(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
+    def labels(self, *args: Any, **kwargs: Any) -> "_NoOpMetric":
+        key = args + tuple(sorted(kwargs.items()))
+        if key not in self._children:
+            child = _NoOpMetric()
+            self._children[key] = child
+        return self._children[key]
 
-    def dec(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
+    def inc(self, amount: float = 1.0) -> None:
+        self._value.inc(amount)
 
-    def set(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
+    def dec(self, amount: float = 1.0) -> None:
+        self._value.inc(-amount)
+
+    def set(self, value: float) -> None:
+        self._value.set(value)
 
     def observe(self, *_args: Any, **_kwargs: Any) -> None:
         pass
@@ -62,6 +84,21 @@ if _prometheus_enabled():
         "Rejected API requests",
         ["endpoint", "reason", "status_code"],
     )
+    retention_cleanup_total = Counter(
+        "pms_retention_cleanup_total",
+        "Retention cleanup operations",
+        ["backend", "artifact", "outcome"],
+    )
+    retention_cleanup_failures_total = Counter(
+        "pms_retention_cleanup_failures_total",
+        "Retention cleanup failures",
+        ["backend", "action"],
+    )
+    expired_job_reads_total = Counter(
+        "pms_expired_job_reads_total",
+        "Known-expired compare job read attempts",
+        ["backend", "endpoint"],
+    )
 
 else:
     jobs_submitted_total = _NoOpMetric()
@@ -71,3 +108,6 @@ else:
     jobs_inflight = _NoOpMetric()
     job_duration_seconds = _NoOpMetric()
     rejected_requests_total = _NoOpMetric()
+    retention_cleanup_total = _NoOpMetric()
+    retention_cleanup_failures_total = _NoOpMetric()
+    expired_job_reads_total = _NoOpMetric()
